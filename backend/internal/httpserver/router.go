@@ -5,7 +5,9 @@ import (
 
 	"energy-platform/internal/auth"
 	"energy-platform/internal/config"
+	"energy-platform/internal/dashboard"
 	sqlcgen "energy-platform/internal/db/sqlc"
+	"energy-platform/internal/meters"
 )
 
 func New(cfg config.Config, queries *sqlcgen.Queries) http.Handler {
@@ -18,7 +20,17 @@ func New(cfg config.Config, queries *sqlcgen.Queries) http.Handler {
 
 	authHandler := auth.NewHandler(queries, cfg.JWTSecret)
 	mux.HandleFunc("POST /auth/login", authHandler.Login)
-	mux.Handle("GET /auth/me", auth.RequireAuth(cfg.JWTSecret)(http.HandlerFunc(authHandler.Me)))
+
+	requireAuth := auth.RequireAuth(cfg.JWTSecret)
+	mux.Handle("GET /auth/me", requireAuth(http.HandlerFunc(authHandler.Me)))
+
+	metersHandler := meters.NewHandler(queries)
+	mux.Handle("GET /meters", requireAuth(http.HandlerFunc(metersHandler.List)))
+	mux.Handle("GET /meters/{meterId}", requireAuth(http.HandlerFunc(metersHandler.Get)))
+	mux.Handle("GET /meters/{meterId}/readings", requireAuth(http.HandlerFunc(metersHandler.ListReadings)))
+
+	dashboardHandler := dashboard.NewHandler(queries)
+	mux.Handle("GET /dashboard/summary", requireAuth(http.HandlerFunc(dashboardHandler.Summary)))
 
 	return withCORS(cfg.AllowedOrigin, mux)
 }

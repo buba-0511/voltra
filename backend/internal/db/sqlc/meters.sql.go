@@ -44,6 +44,54 @@ func (q *Queries) GetMeterByMeterID(ctx context.Context, arg GetMeterByMeterIDPa
 	return i, err
 }
 
+const getMeterDetail = `-- name: GetMeterDetail :one
+SELECT
+    m.meter_id,
+    m.name,
+    m.location,
+    m.status,
+    COALESCE(SUM(r.consumption_kwh), 0)::float8 AS total_consumption_kwh,
+    COALESCE(AVG(r.voltage_v), 0)::float8 AS avg_voltage_v,
+    COALESCE(AVG(r.current_a), 0)::float8 AS avg_current_a,
+    COALESCE(AVG(r.power_factor), 0)::float8 AS avg_power_factor
+FROM meters m
+LEFT JOIN readings r ON r.tenant_id = m.tenant_id AND r.meter_id = m.meter_id
+WHERE m.tenant_id = $1 AND m.meter_id = $2
+GROUP BY m.meter_id, m.name, m.location, m.status
+`
+
+type GetMeterDetailParams struct {
+	TenantID int32  `json:"tenant_id"`
+	MeterID  string `json:"meter_id"`
+}
+
+type GetMeterDetailRow struct {
+	MeterID             string  `json:"meter_id"`
+	Name                string  `json:"name"`
+	Location            string  `json:"location"`
+	Status              string  `json:"status"`
+	TotalConsumptionKwh float64 `json:"total_consumption_kwh"`
+	AvgVoltageV         float64 `json:"avg_voltage_v"`
+	AvgCurrentA         float64 `json:"avg_current_a"`
+	AvgPowerFactor      float64 `json:"avg_power_factor"`
+}
+
+func (q *Queries) GetMeterDetail(ctx context.Context, arg GetMeterDetailParams) (GetMeterDetailRow, error) {
+	row := q.db.QueryRow(ctx, getMeterDetail, arg.TenantID, arg.MeterID)
+	var i GetMeterDetailRow
+	err := row.Scan(
+		&i.MeterID,
+		&i.Name,
+		&i.Location,
+		&i.Status,
+		&i.TotalConsumptionKwh,
+		&i.AvgVoltageV,
+		&i.AvgCurrentA,
+		&i.AvgPowerFactor,
+	)
+	return i, err
+}
+
 const listMeters = `-- name: ListMeters :many
 SELECT id, tenant_id, meter_id, name, location, status, created_at FROM meters WHERE tenant_id = $1 ORDER BY meter_id
 `
@@ -65,6 +113,54 @@ func (q *Queries) ListMeters(ctx context.Context, tenantID int32) ([]Meter, erro
 			&i.Location,
 			&i.Status,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMetersWithConsumption = `-- name: ListMetersWithConsumption :many
+SELECT
+    m.meter_id,
+    m.name,
+    m.location,
+    m.status,
+    COALESCE(SUM(r.consumption_kwh), 0)::float8 AS total_consumption_kwh
+FROM meters m
+LEFT JOIN readings r ON r.tenant_id = m.tenant_id AND r.meter_id = m.meter_id
+WHERE m.tenant_id = $1
+GROUP BY m.meter_id, m.name, m.location, m.status
+ORDER BY m.meter_id
+`
+
+type ListMetersWithConsumptionRow struct {
+	MeterID             string  `json:"meter_id"`
+	Name                string  `json:"name"`
+	Location            string  `json:"location"`
+	Status              string  `json:"status"`
+	TotalConsumptionKwh float64 `json:"total_consumption_kwh"`
+}
+
+func (q *Queries) ListMetersWithConsumption(ctx context.Context, tenantID int32) ([]ListMetersWithConsumptionRow, error) {
+	rows, err := q.db.Query(ctx, listMetersWithConsumption, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMetersWithConsumptionRow
+	for rows.Next() {
+		var i ListMetersWithConsumptionRow
+		if err := rows.Scan(
+			&i.MeterID,
+			&i.Name,
+			&i.Location,
+			&i.Status,
+			&i.TotalConsumptionKwh,
 		); err != nil {
 			return nil, err
 		}

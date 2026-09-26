@@ -14,8 +14,9 @@ sin lógica de negocio todavía:
   completo del ERD, y un seed que carga `readings.csv`/`events.csv` al
   arrancar (idempotente: si ya hay datos, no vuelve a insertar). Login
   (`POST /auth/login`, `GET /auth/me`) con JWT y middleware que protege
-  rutas. `GET /health`. Todavía sin motor de anomalías ni el resto de la
-  API de negocio.
+  rutas. `GET /meters`, `/meters/:id`, `/meters/:id/readings` y
+  `/dashboard/summary` con datos reales. `GET /health`. Todavía sin motor
+  de anomalías.
 - `frontend/` — Vite + React + TypeScript + Tailwind CSS v4, con la página
   por defecto limpiada. Sin rutas ni pantallas del producto todavía.
 - `data/` — `readings.csv` (4.032 lecturas, 12 medidores, 14 días) y
@@ -24,8 +25,8 @@ sin lógica de negocio todavía:
   frontend en modo dev.
 
 Pendiente: motor de detección de anomalías (baseline/z-score/calidad de
-datos), clasificación y explicación por IA, API REST de negocio, y las
-pantallas de Dashboard → Medidores → Detalle →
+datos), clasificación y explicación por IA, la API de `/ai/*` y
+`/anomalies`, y las pantallas de Dashboard → Medidores → Detalle →
 Anomalías IA → Investigación → Acción.
 
 ## Cómo se pensó esto
@@ -201,7 +202,10 @@ Investigación sin modelar una tabla nueva por cada tipo de evidencia.
 │   │   │   ├── migrations/  # SQL crudo, fuente de verdad del schema
 │   │   │   ├── queries/     # .sql que lee sqlc
 │   │   │   └── sqlc/        # código Go generado (comiteado)
+│   │   ├── dashboard/       # GET /dashboard/summary
+│   │   ├── httpx/           # helpers HTTP compartidos (JSON, formato de fecha)
 │   │   ├── httpserver/      # router + CORS, arma todas las rutas
+│   │   ├── meters/          # GET /meters, /meters/:id, /meters/:id/readings
 │   │   └── seed/            # tenant + usuario demo + carga de readings/events.csv
 │   ├── sqlc.yaml
 │   ├── Dockerfile

@@ -12,7 +12,12 @@ type Querier interface {
 	CountReadings(ctx context.Context, tenantID int32) (int64, error)
 	CreateTenant(ctx context.Context, arg CreateTenantParams) (Tenant, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	DashboardAnomalyCounts(ctx context.Context, tenantID int32) (DashboardAnomalyCountsRow, error)
+	DashboardLatestAnalysisRun(ctx context.Context, tenantID int32) (AnalysisRun, error)
+	DashboardMeterCount(ctx context.Context, tenantID int32) (int64, error)
+	DashboardTotalConsumption(ctx context.Context, tenantID int32) (float64, error)
 	GetMeterByMeterID(ctx context.Context, arg GetMeterByMeterIDParams) (Meter, error)
+	GetMeterDetail(ctx context.Context, arg GetMeterDetailParams) (GetMeterDetailRow, error)
 	GetTenantBySlug(ctx context.Context, slug string) (Tenant, error)
 	GetUserByEmail(ctx context.Context, arg GetUserByEmailParams) (User, error)
 	GetUserByID(ctx context.Context, id int32) (User, error)
@@ -20,6 +25,7 @@ type Querier interface {
 	InsertReading(ctx context.Context, arg InsertReadingParams) error
 	ListEventsByMeter(ctx context.Context, arg ListEventsByMeterParams) ([]Event, error)
 	ListMeters(ctx context.Context, tenantID int32) ([]Meter, error)
+	ListMetersWithConsumption(ctx context.Context, tenantID int32) ([]ListMetersWithConsumptionRow, error)
 	ListReadingsByMeter(ctx context.Context, arg ListReadingsByMeterParams) ([]Reading, error)
 	UpsertMeter(ctx context.Context, arg UpsertMeterParams) (Meter, error)
 }
