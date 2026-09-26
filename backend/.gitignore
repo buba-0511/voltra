@@ -1,2 +1,4 @@
 /server
 *.exe
+.env.local
+.env
