@@ -6,6 +6,7 @@ import (
 
 	"energy-platform/internal/config"
 	sqlcgen "energy-platform/internal/db/sqlc"
+	"energy-platform/internal/httpx"
 )
 
 type Handler struct {
@@ -36,13 +37,13 @@ type userPublic struct {
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
 	tenant, err := h.Queries.GetTenantBySlug(r.Context(), config.DefaultTenantSlug)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "tenant lookup failed")
+		httpx.WriteError(w, http.StatusInternalServerError, "tenant lookup failed")
 		return
 	}
 
@@ -51,17 +52,17 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		Email:    req.Email,
 	})
 	if err != nil || !ComparePassword(user.PasswordHash, req.Password) {
-		writeError(w, http.StatusUnauthorized, "invalid email or password")
+		httpx.WriteError(w, http.StatusUnauthorized, "invalid email or password")
 		return
 	}
 
 	token, err := GenerateToken(h.JWTSecret, user.ID, user.TenantID, user.Email)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to issue token")
+		httpx.WriteError(w, http.StatusInternalServerError, "failed to issue token")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, loginResponse{
+	httpx.WriteJSON(w, http.StatusOK, loginResponse{
 		Token: token,
 		User:  userPublic{ID: user.ID, Email: user.Email, Name: user.Name},
 	})
@@ -70,15 +71,15 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	claims, ok := ClaimsFromContext(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "not authenticated")
+		httpx.WriteError(w, http.StatusUnauthorized, "not authenticated")
 		return
 	}
 
 	user, err := h.Queries.GetUserByID(r.Context(), claims.UserID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "user not found")
+		httpx.WriteError(w, http.StatusNotFound, "user not found")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, userPublic{ID: user.ID, Email: user.Email, Name: user.Name})
+	httpx.WriteJSON(w, http.StatusOK, userPublic{ID: user.ID, Email: user.Email, Name: user.Name})
 }
