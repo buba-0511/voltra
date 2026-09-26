@@ -16,8 +16,9 @@ sin lógica de negocio todavía:
   (`POST /auth/login`, `GET /auth/me`) con JWT y middleware que protege
   rutas. `GET /meters`, `/meters/:id`, `/meters/:id/readings` y
   `/dashboard/summary` con datos reales. `GET /health`. Motor de
-  detección + clasificación (`internal/analytics` + `internal/ai`) ya
-  funciona y está testeado contra el dataset real, pero todavía no está
+  detección + clasificación + explicación (`internal/analytics` +
+  `internal/ai`) ya funciona y está testeado contra el dataset real —
+  incluida una llamada real a OpenAI, verificada — pero todavía no está
   conectado a ningún endpoint ni persiste en `anomalies`.
 - `frontend/` — Vite + React + TypeScript + Tailwind CSS v4, con la página
   por defecto limpiada. Sin rutas ni pantallas del producto todavía.
@@ -26,8 +27,8 @@ sin lógica de negocio todavía:
 - `docker-compose.local.yaml` + `run.sh` — levanta Postgres, backend y
   frontend en modo dev.
 
-Pendiente: explicación por IA (LLM), la API de `/ai/*` y `/anomalies`
-(orquestar analytics+ai+explicación y persistir en la tabla `anomalies`),
+Pendiente: la API de `/ai/*` y `/anomalies` (orquestar analytics+ai y
+persistir en la tabla `anomalies`),
 y las pantallas de Dashboard → Medidores → Detalle →
 Anomalías IA → Investigación → Acción.
 
@@ -63,6 +64,12 @@ un LLM (OpenAI) es para redactar el `reason` y el `recommended_action` — le
 paso la evidencia ya calculada y le pido que la narre, no que diagnostique.
 Si no hay `OPENAI_API_KEY` o falla la llamada, cae a una explicación armada
 con template, para que el demo no se rompa por un tema de red o de costo.
+El fallback no es teórico: los tests de `internal/ai` levantan un servidor
+HTTP falso y verifican que ante un 401, una respuesta sin JSON válido, o
+sin API key configurada, siempre vuelve algo usable — y por separado hay
+un test con build tag `live` (no corre en la suite normal) que sí pega
+contra la API real de OpenAI, para confirmar que el prompt y el parseo
+funcionan con la API de verdad, no solo con el mock.
 
 Separar "falla de sensor" de "cambio real de consumo" no salió a la primera.
 Mi primer intento marcaba calidad de datos con un z-score de voltaje/PF
@@ -225,7 +232,7 @@ Investigación sin modelar una tabla nueva por cada tipo de evidencia.
 ├── backend/                 # Go
 │   ├── cmd/server/main.go
 │   ├── internal/
-│   │   ├── ai/              # clasificación por reglas (tipo/severidad/confianza)
+│   │   ├── ai/              # clasificación por reglas + explicación (template/OpenAI)
 │   │   ├── analytics/       # baseline por hora, z-score, calidad de datos
 │   │   ├── auth/            # password hashing, JWT, middleware, /auth/login y /auth/me
 │   │   ├── config/
@@ -274,3 +281,13 @@ Esto levanta:
 
 **Usuario demo seedeado:** `admin@energy-platform.local` / `demo1234`
 (un solo tenant, un solo usuario — ver [Alcance de diseño](#cómo-se-pensó-esto)).
+
+**Probar el explainer de OpenAI contra la API real** (no corre en
+`go test ./...` normal, hay que pedirlo explícitamente para no gastar
+créditos en cada corrida):
+
+```bash
+cd backend
+echo "OPENAI_API_KEY=sk-..." > .env.local   # gitignored
+go test ./internal/ai/... -tags=live -run TestLive_OpenAIExplainer_RealCall -v
+```
