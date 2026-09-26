@@ -9,9 +9,11 @@ Prueba técnica: Backend + Frontend + Data + IA.
 Repo en construcción, paso a paso. Por ahora hay **scaffolding** funcional,
 sin lógica de negocio todavía:
 
-- `backend/` — módulo Go (`energy-platform`) con un servidor HTTP mínimo
-  (`cmd/server/main.go`) que expone `GET /health`. Nada de DB, rutas de
-  negocio ni motor de anomalías todavía.
+- `backend/` — módulo Go (`energy-platform`), Postgres con `sqlc` (SQL
+  explícito + código Go generado, sin ORM), migraciones para el schema
+  completo del ERD, y un seed que carga `readings.csv`/`events.csv` al
+  arrancar (idempotente: si ya hay datos, no vuelve a insertar). Expone
+  `GET /health`. Todavía sin rutas de negocio ni motor de anomalías.
 - `frontend/` — Vite + React + TypeScript + Tailwind CSS v4, con la página
   por defecto limpiada. Sin rutas ni pantallas del producto todavía.
 - `data/` — `readings.csv` (4.032 lecturas, 12 medidores, 14 días) y
@@ -19,9 +21,9 @@ sin lógica de negocio todavía:
 - `docker-compose.local.yaml` + `run.sh` — levanta Postgres, backend y
   frontend en modo dev.
 
-Pendiente: persistencia en Postgres, carga del CSV, motor de detección de
-anomalías (baseline/z-score/calidad de datos), clasificación y explicación
-por IA, API REST, y las pantallas de Dashboard → Medidores → Detalle →
+Pendiente: auth (login/JWT), motor de detección de anomalías
+(baseline/z-score/calidad de datos), clasificación y explicación por IA,
+API REST de negocio, y las pantallas de Dashboard → Medidores → Detalle →
 Anomalías IA → Investigación → Acción.
 
 ## Cómo se pensó esto
@@ -35,6 +37,13 @@ bastante directa (medidores → lecturas → eventos → anomalías), y con un
 campo `JSONB` para la evidencia de cada anomalía no hace falta modelar una
 tabla nueva por cada tipo de dato que cambia según el caso (z-scores,
 voltaje/PF, timestamps flageados, evento relacionado).
+
+Para hablar con la base no uso un ORM — en Go no es tan común como en otros
+lenguajes, y para el motor de detección (agregaciones, baseline por hora,
+JSONB) quería control fino sobre el SQL. Uso `sqlc`: escribo el SQL a mano
+en archivos `.sql`, y genera funciones Go tipadas a partir de eso. Si
+cambio una columna en una migración y una query deja de ser válida, me
+entero al generar el código, no en producción.
 
 La parte de IA la separé en dos capas que no se pisan. La detección y
 clasificación — ¿hay anomalía?, de qué tipo, qué tan severa, con qué
@@ -183,6 +192,15 @@ Investigación sin modelar una tabla nueva por cada tipo de evidencia.
 .
 ├── backend/                 # Go
 │   ├── cmd/server/main.go
+│   ├── internal/
+│   │   ├── auth/            # hashing de passwords (login llega en la próxima pieza)
+│   │   ├── config/
+│   │   ├── db/
+│   │   │   ├── migrations/  # SQL crudo, fuente de verdad del schema
+│   │   │   ├── queries/     # .sql que lee sqlc
+│   │   │   └── sqlc/        # código Go generado (comiteado)
+│   │   └── seed/            # tenant + usuario demo + carga de readings/events.csv
+│   ├── sqlc.yaml
 │   ├── Dockerfile
 │   └── go.mod
 ├── frontend/                 # Vite + React + TS + Tailwind
@@ -212,4 +230,9 @@ Esto levanta:
 |-----------------|-------------------------------------------------------------|
 | `PORT`          | `8080`                                                       |
 | `DATABASE_DSN`  | `postgres://app:app@db:5432/energy?sslmode=disable` (en Docker) |
+| `DATA_DIR`      | `../data` — carpeta con `readings.csv`/`events.csv` para el seed |
+| `JWT_SECRET`    | `dev-secret-change-me` — cambiar en cualquier entorno real |
 | `OPENAI_API_KEY` | (sin default) — si no está seteada, las explicaciones de anomalías caen a template en vez de LLM |
+
+**Usuario demo seedeado:** `admin@energy-platform.local` / `demo1234`
+(un solo tenant, un solo usuario — ver [Alcance de diseño](#cómo-se-pensó-esto)).

@@ -1,16 +1,34 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
-	"os"
+
+	"energy-platform/internal/config"
+	"energy-platform/internal/db"
+	"energy-platform/internal/seed"
 )
 
 func main() {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	ctx := context.Background()
+	cfg := config.Load()
+
+	pool, err := db.Connect(ctx, cfg.DatabaseDSN)
+	if err != nil {
+		log.Fatalf("connect db: %v", err)
 	}
+	defer pool.Close()
+
+	if err := db.Migrate(ctx, pool); err != nil {
+		log.Fatalf("migrate: %v", err)
+	}
+	log.Print("migrations applied")
+
+	if err := seed.Run(ctx, pool, cfg.DataDir); err != nil {
+		log.Fatalf("seed: %v", err)
+	}
+	log.Print("seed complete")
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -18,8 +36,8 @@ func main() {
 		w.Write([]byte(`{"status":"ok"}`))
 	})
 
-	log.Printf("listening on :%s", port)
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
+	log.Printf("listening on :%s", cfg.Port)
+	if err := http.ListenAndServe(":"+cfg.Port, mux); err != nil {
 		log.Fatal(err)
 	}
 }
