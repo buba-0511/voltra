@@ -9,20 +9,26 @@ import (
 )
 
 type Querier interface {
+	CompleteAnalysisRun(ctx context.Context, arg CompleteAnalysisRunParams) (AnalysisRun, error)
 	CountReadings(ctx context.Context, tenantID int32) (int64, error)
+	CreateAnalysisRun(ctx context.Context, tenantID int32) (AnalysisRun, error)
 	CreateTenant(ctx context.Context, arg CreateTenantParams) (Tenant, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DashboardAnomalyCounts(ctx context.Context, tenantID int32) (DashboardAnomalyCountsRow, error)
 	DashboardLatestAnalysisRun(ctx context.Context, tenantID int32) (AnalysisRun, error)
 	DashboardMeterCount(ctx context.Context, tenantID int32) (int64, error)
 	DashboardTotalConsumption(ctx context.Context, tenantID int32) (float64, error)
+	GetAnalysisRun(ctx context.Context, arg GetAnalysisRunParams) (AnalysisRun, error)
+	GetAnomalyByID(ctx context.Context, arg GetAnomalyByIDParams) (Anomaly, error)
 	GetMeterByMeterID(ctx context.Context, arg GetMeterByMeterIDParams) (Meter, error)
 	GetMeterDetail(ctx context.Context, arg GetMeterDetailParams) (GetMeterDetailRow, error)
 	GetTenantBySlug(ctx context.Context, slug string) (Tenant, error)
 	GetUserByEmail(ctx context.Context, arg GetUserByEmailParams) (User, error)
 	GetUserByID(ctx context.Context, id int32) (User, error)
+	InsertAnomaly(ctx context.Context, arg InsertAnomalyParams) (Anomaly, error)
 	InsertEvent(ctx context.Context, arg InsertEventParams) error
 	InsertReading(ctx context.Context, arg InsertReadingParams) error
+	ListAnomaliesForLatestRun(ctx context.Context, tenantID int32) ([]Anomaly, error)
 	ListEventsByMeter(ctx context.Context, arg ListEventsByMeterParams) ([]Event, error)
 	ListMeters(ctx context.Context, tenantID int32) ([]Meter, error)
 	ListMetersWithConsumption(ctx context.Context, tenantID int32) ([]ListMetersWithConsumptionRow, error)

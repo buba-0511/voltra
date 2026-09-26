@@ -6,20 +6,23 @@ Prueba técnica: Backend + Frontend + Data + IA.
 
 ## Estado actual
 
-Repo en construcción, paso a paso. Por ahora hay **scaffolding** funcional,
-sin lógica de negocio todavía:
+Repo en construcción, paso a paso. **El backend ya está completo y
+funcional de punta a punta**; lo que falta es el frontend:
 
 - `backend/` — módulo Go (`energy-platform`), Postgres con `sqlc` (SQL
   explícito + código Go generado, sin ORM), migraciones para el schema
   completo del ERD, y un seed que carga `readings.csv`/`events.csv` al
-  arrancar (idempotente: si ya hay datos, no vuelve a insertar). Login
-  (`POST /auth/login`, `GET /auth/me`) con JWT y middleware que protege
-  rutas. `GET /meters`, `/meters/:id`, `/meters/:id/readings` y
-  `/dashboard/summary` con datos reales. `GET /health`. Motor de
-  detección + clasificación + explicación (`internal/analytics` +
-  `internal/ai`) ya funciona y está testeado contra el dataset real —
-  incluida una llamada real a OpenAI, verificada — pero todavía no está
-  conectado a ningún endpoint ni persiste en `anomalies`.
+  arrancar (idempotente). Login (`POST /auth/login`, `GET /auth/me`) con
+  JWT. `GET /meters`, `/meters/:id`, `/meters/:id/readings`,
+  `/dashboard/summary` con datos reales. Motor de detección +
+  clasificación + explicación (`internal/analytics` + `internal/ai`),
+  orquestado por `internal/anomalies` y expuesto en
+  `POST /ai/analyze`, `GET /ai/analysis/:id`, `GET /anomalies`,
+  `GET /anomalies/:id`. `GET /health`.
+  Corrido de punta a punta contra el dataset real: 12 medidores
+  analizados, 4 anomalías detectadas, 2 de alta prioridad — coincide
+  exacto con el ejemplo del enunciado (sección 13). Las 4 explicaciones
+  las escribió un LLM real (OpenAI), citando los números correctos.
 - `frontend/` — Vite + React + TypeScript + Tailwind CSS v4, con la página
   por defecto limpiada. Sin rutas ni pantallas del producto todavía.
 - `data/` — `readings.csv` (4.032 lecturas, 12 medidores, 14 días) y
@@ -27,10 +30,8 @@ sin lógica de negocio todavía:
 - `docker-compose.local.yaml` + `run.sh` — levanta Postgres, backend y
   frontend en modo dev.
 
-Pendiente: la API de `/ai/*` y `/anomalies` (orquestar analytics+ai y
-persistir en la tabla `anomalies`),
-y las pantallas de Dashboard → Medidores → Detalle →
-Anomalías IA → Investigación → Acción.
+Pendiente: las pantallas de Dashboard → Medidores → Detalle →
+Anomalías IA → Investigación → Acción, conectadas a esta API.
 
 ## Cómo se pensó esto
 
@@ -97,6 +98,25 @@ distinguir (sección 8: "spikes/cambios bruscos" vs "cambios persistentes")
 y que hasta ahora tratábamos igual — y le da más sustancia al `reason` que
 va a redactar el LLM en la pieza 5 ("subió 110% de forma abrupta y sigue
 así 2 días después" en vez de solo "subió 110%").
+
+`POST /ai/analyze` corre todo el pipeline de forma síncrona — para 12
+medidores el motor estadístico es instantáneo, y lo único que tarda es el
+LLM. En vez de llamarlo una anomalía a la vez (que con 4 anomalías serían
+~12-15s en serie), las explicaciones salen en paralelo con goroutines, así
+que la corrida completa (detección + clasificación + 4 llamadas a OpenAI)
+tarda ~3s. No armé infraestructura de polling/estado-en-progreso porque acá
+no hace falta — para un dataset que creciera a cientos de medidores sí
+tendría sentido, pero no para este. `GET /anomalies` devuelve solo las
+anomalías del último análisis corrido (no las de cada click acumulado) —
+correrlo de nuevo reemplaza lo que se muestra, no lo duplica.
+
+Encontré el mismo bug del offset de timezone (pgx decodificando con
+`time.Local`) por segunda vez, esta vez escondido dentro del JSON de
+`evidence` (`related_event.timestamp` salía con offset de mi máquina en
+vez de `Z`) — se me había colado porque ese campo se serializa en memoria
+antes de tocar `httpx.FormatTime`, que es donde estaba el fix la primera
+vez. Ahora se fuerza `.UTC()` apenas se leen los timestamps desde la base,
+en el punto de conversión, no en cada lugar donde se despliegan.
 
 Frontend: React + Vite + TypeScript + Tailwind, buscando que se sienta como
 un producto real y no como pantallas de prueba, sin perder velocidad de
@@ -234,6 +254,7 @@ Investigación sin modelar una tabla nueva por cada tipo de evidencia.
 │   ├── internal/
 │   │   ├── ai/              # clasificación por reglas + explicación (template/OpenAI)
 │   │   ├── analytics/       # baseline por hora, z-score, calidad de datos
+│   │   ├── anomalies/       # orquesta analytics+ai, /ai/analyze, /ai/analysis/:id, /anomalies
 │   │   ├── auth/            # password hashing, JWT, middleware, /auth/login y /auth/me
 │   │   ├── config/
 │   │   ├── db/
