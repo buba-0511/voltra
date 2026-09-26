@@ -15,8 +15,10 @@ sin lógica de negocio todavía:
   arrancar (idempotente: si ya hay datos, no vuelve a insertar). Login
   (`POST /auth/login`, `GET /auth/me`) con JWT y middleware que protege
   rutas. `GET /meters`, `/meters/:id`, `/meters/:id/readings` y
-  `/dashboard/summary` con datos reales. `GET /health`. Todavía sin motor
-  de anomalías.
+  `/dashboard/summary` con datos reales. `GET /health`. Motor de
+  detección + clasificación (`internal/analytics` + `internal/ai`) ya
+  funciona y está testeado contra el dataset real, pero todavía no está
+  conectado a ningún endpoint ni persiste en `anomalies`.
 - `frontend/` — Vite + React + TypeScript + Tailwind CSS v4, con la página
   por defecto limpiada. Sin rutas ni pantallas del producto todavía.
 - `data/` — `readings.csv` (4.032 lecturas, 12 medidores, 14 días) y
@@ -24,9 +26,9 @@ sin lógica de negocio todavía:
 - `docker-compose.local.yaml` + `run.sh` — levanta Postgres, backend y
   frontend en modo dev.
 
-Pendiente: motor de detección de anomalías (baseline/z-score/calidad de
-datos), clasificación y explicación por IA, la API de `/ai/*` y
-`/anomalies`, y las pantallas de Dashboard → Medidores → Detalle →
+Pendiente: explicación por IA (LLM), la API de `/ai/*` y `/anomalies`
+(orquestar analytics+ai+explicación y persistir en la tabla `anomalies`),
+y las pantallas de Dashboard → Medidores → Detalle →
 Anomalías IA → Investigación → Acción.
 
 ## Cómo se pensó esto
@@ -61,6 +63,33 @@ un LLM (OpenAI) es para redactar el `reason` y el `recommended_action` — le
 paso la evidencia ya calculada y le pido que la narre, no que diagnostique.
 Si no hay `OPENAI_API_KEY` o falla la llamada, cae a una explicación armada
 con template, para que el demo no se rompa por un tema de red o de costo.
+
+Separar "falla de sensor" de "cambio real de consumo" no salió a la primera.
+Mi primer intento marcaba calidad de datos con un z-score de voltaje/PF
+contra la media histórica del medidor — y eso también disparaba para M-109,
+cuyo power factor cae de ~0.95 a ~0.74 cuando sube el consumo (un cambio
+real, no un sensor roto). La señal que sí separa los dos casos es la
+continuidad: M-109 tiene un bloque de 58 horas seguidas sin un solo hueco,
+mismo signo y magnitud todo el tiempo (un cambio de estado sostenido);
+M-112 tiene 16 lecturas sueltas cada 3 horas exactas, alternando de signo y
+magnitud entre sí (ruido de sensor intermitente, no un estado nuevo). Ahora
+el motor agrupa las lecturas fuera de rango en bloques contiguos: un bloque
+largo se trata como evidencia de una anomalía real; lecturas aisladas y
+dispersas se marcan como calidad de datos. Queda como test en
+`internal/analytics/detector_test.go` y `internal/ai/classifier_test.go`,
+corriendo contra el CSV real — los 4 casos del dataset (M-104/106/109/112)
+más los 8 medidores sin anomalía, para no perder de vista falsos positivos.
+
+Cada racha de consumo también queda etiquetada con dos datos extra, baratos
+de calcular con lo que ya teníamos: si sigue activa (`Ongoing`, el bloque
+llega hasta la última lectura del dataset) o ya se resolvió sola, y si el
+cambio fue abrupto (`STEP`, la desviación ya está casi completa en la
+primera lectura fuera de rango) o gradual (`GRADUAL`, tarda varias horas en
+llegar a su punto máximo). Esto separa dos categorías que el enunciado pide
+distinguir (sección 8: "spikes/cambios bruscos" vs "cambios persistentes")
+y que hasta ahora tratábamos igual — y le da más sustancia al `reason` que
+va a redactar el LLM en la pieza 5 ("subió 110% de forma abrupta y sigue
+así 2 días después" en vez de solo "subió 110%").
 
 Frontend: React + Vite + TypeScript + Tailwind, buscando que se sienta como
 un producto real y no como pantallas de prueba, sin perder velocidad de
@@ -196,6 +225,8 @@ Investigación sin modelar una tabla nueva por cada tipo de evidencia.
 ├── backend/                 # Go
 │   ├── cmd/server/main.go
 │   ├── internal/
+│   │   ├── ai/              # clasificación por reglas (tipo/severidad/confianza)
+│   │   ├── analytics/       # baseline por hora, z-score, calidad de datos
 │   │   ├── auth/            # password hashing, JWT, middleware, /auth/login y /auth/me
 │   │   ├── config/
 │   │   ├── db/
