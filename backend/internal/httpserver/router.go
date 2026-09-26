@@ -3,6 +3,8 @@ package httpserver
 import (
 	"net/http"
 
+	"energy-platform/internal/ai"
+	"energy-platform/internal/anomalies"
 	"energy-platform/internal/auth"
 	"energy-platform/internal/config"
 	"energy-platform/internal/dashboard"
@@ -31,6 +33,14 @@ func New(cfg config.Config, queries *sqlcgen.Queries) http.Handler {
 
 	dashboardHandler := dashboard.NewHandler(queries)
 	mux.Handle("GET /dashboard/summary", requireAuth(http.HandlerFunc(dashboardHandler.Summary)))
+
+	explainer := ai.NewOpenAIExplainer(cfg.OpenAIAPIKey)
+	anomalyService := anomalies.NewService(queries, explainer)
+	anomalyHandler := anomalies.NewHandler(anomalyService, queries)
+	mux.Handle("POST /ai/analyze", requireAuth(http.HandlerFunc(anomalyHandler.Analyze)))
+	mux.Handle("GET /ai/analysis/{id}", requireAuth(http.HandlerFunc(anomalyHandler.GetAnalysisRun)))
+	mux.Handle("GET /anomalies", requireAuth(http.HandlerFunc(anomalyHandler.List)))
+	mux.Handle("GET /anomalies/{id}", requireAuth(http.HandlerFunc(anomalyHandler.Get)))
 
 	return withCORS(cfg.AllowedOrigin, mux)
 }
