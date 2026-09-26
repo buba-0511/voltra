@@ -12,8 +12,10 @@ sin lógica de negocio todavía:
 - `backend/` — módulo Go (`energy-platform`), Postgres con `sqlc` (SQL
   explícito + código Go generado, sin ORM), migraciones para el schema
   completo del ERD, y un seed que carga `readings.csv`/`events.csv` al
-  arrancar (idempotente: si ya hay datos, no vuelve a insertar). Expone
-  `GET /health`. Todavía sin rutas de negocio ni motor de anomalías.
+  arrancar (idempotente: si ya hay datos, no vuelve a insertar). Login
+  (`POST /auth/login`, `GET /auth/me`) con JWT y middleware que protege
+  rutas. `GET /health`. Todavía sin motor de anomalías ni el resto de la
+  API de negocio.
 - `frontend/` — Vite + React + TypeScript + Tailwind CSS v4, con la página
   por defecto limpiada. Sin rutas ni pantallas del producto todavía.
 - `data/` — `readings.csv` (4.032 lecturas, 12 medidores, 14 días) y
@@ -21,9 +23,9 @@ sin lógica de negocio todavía:
 - `docker-compose.local.yaml` + `run.sh` — levanta Postgres, backend y
   frontend en modo dev.
 
-Pendiente: auth (login/JWT), motor de detección de anomalías
-(baseline/z-score/calidad de datos), clasificación y explicación por IA,
-API REST de negocio, y las pantallas de Dashboard → Medidores → Detalle →
+Pendiente: motor de detección de anomalías (baseline/z-score/calidad de
+datos), clasificación y explicación por IA, API REST de negocio, y las
+pantallas de Dashboard → Medidores → Detalle →
 Anomalías IA → Investigación → Acción.
 
 ## Cómo se pensó esto
@@ -193,12 +195,13 @@ Investigación sin modelar una tabla nueva por cada tipo de evidencia.
 ├── backend/                 # Go
 │   ├── cmd/server/main.go
 │   ├── internal/
-│   │   ├── auth/            # hashing de passwords (login llega en la próxima pieza)
+│   │   ├── auth/            # password hashing, JWT, middleware, /auth/login y /auth/me
 │   │   ├── config/
 │   │   ├── db/
 │   │   │   ├── migrations/  # SQL crudo, fuente de verdad del schema
 │   │   │   ├── queries/     # .sql que lee sqlc
 │   │   │   └── sqlc/        # código Go generado (comiteado)
+│   │   ├── httpserver/      # router + CORS, arma todas las rutas
 │   │   └── seed/            # tenant + usuario demo + carga de readings/events.csv
 │   ├── sqlc.yaml
 │   ├── Dockerfile

@@ -10,13 +10,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"energy-platform/internal/auth"
+	"energy-platform/internal/config"
 	sqlcgen "energy-platform/internal/db/sqlc"
 )
 
 const (
-	DefaultTenantSlug = "default"
-	DemoUserEmail     = "admin@energy-platform.local"
-	DemoUserPassword  = "demo1234"
+	DemoUserEmail    = "admin@energy-platform.local"
+	DemoUserPassword = "demo1234"
 )
 
 // Run seeds the default tenant and demo user (idempotent via upsert), then
@@ -25,7 +25,7 @@ func Run(ctx context.Context, pool *pgxpool.Pool, dataDir string) error {
 	q := sqlcgen.New(pool)
 
 	tenant, err := q.CreateTenant(ctx, sqlcgen.CreateTenantParams{
-		Slug: DefaultTenantSlug,
+		Slug: config.DefaultTenantSlug,
 		Name: "Default",
 	})
 	if err != nil {
