@@ -2,6 +2,12 @@ package config
 
 import "os"
 
+// DefaultTenantSlug identifies the single tenant this MVP operates with.
+// The schema supports multiple tenants (see internal/db/migrations), but
+// there's no tenant-selection UI yet, so both the seed and the login flow
+// resolve against this one.
+const DefaultTenantSlug = "default"
+
 type Config struct {
 	Port          string
 	DatabaseDSN   string
