@@ -4,6 +4,10 @@ MVP para gestionar medidores eléctricos y usar IA (detección estadística +
 explicación) para detectar, priorizar y recomendar acciones sobre anomalías.
 Prueba técnica: Backend + Frontend + Data + IA.
 
+**Demo en vivo:** https://frontend-production-6cbb.up.railway.app
+(`admin@energy-platform.local` / `demo1234`). Desplegado en Railway,
+build automático desde la rama `develop` en cada push.
+
 ## Cómo correr esto
 
 Requisito único: tener Docker en ejecución.
@@ -308,6 +312,15 @@ Este comando levanta:
 - **backend** — Go, `go run ./cmd/server`, puerto `8080` (`GET /health`)
 - **frontend** — Vite dev server, puerto `5173`
 - **db** — Postgres 16, puerto host `5433` (usuario/clave/base: `app`/`app`/`energy`)
+
+**Deploy (Railway):** tres servicios en el mismo proyecto — Postgres
+gestionado, `backend` y `frontend` como builds Docker independientes
+(`backend/Dockerfile.prod` y `frontend/Dockerfile.prod`, cada uno
+autocontenido en su propia carpeta), conectados al repo de GitHub con
+auto-deploy en cada push a `develop`. El backend corre migraciones y seed
+al arrancar, igual que en local. `ALLOWED_ORIGIN` y `COOKIE_SECURE=true`
+apuntan al dominio del frontend para que la cookie de sesión funcione
+entre dominios distintos (`SameSite=None; Secure`).
 
 ## Variables de entorno (backend)
 
