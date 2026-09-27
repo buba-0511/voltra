@@ -153,8 +153,10 @@ desde el diseño inicial no tiene costo adicional.
   mediante "Run AI Analysis"; no hay websockets ni polling continuo.
 - Modelos entrenados: la detección es estadística y explicable, no una
   caja negra.
-- Tests end-to-end o CI/CD: la cobertura se concentra en el motor de
-  detección y clasificación, que es lo que evalúa la prueba.
+- Tests end-to-end: la cobertura de tests se concentra en el motor de
+  detección y clasificación, que es lo que evalúa la prueba. Sí hay CI
+  (`.github/workflows/ci.yml`: build, vet, tests del backend y
+  build/lint del frontend en cada push/PR).
 
 ## Modelo de datos
 
