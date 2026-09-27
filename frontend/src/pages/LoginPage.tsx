@@ -1,8 +1,9 @@
-import { AlertCircle, Zap } from 'lucide-react'
+import { AlertCircle } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { useLoginMutation } from '../api/apiSlice'
 import { hasSession } from '../api/sessionFlag'
+import { VoltraMark } from '../components/VoltraMark'
 import { credentialsSet } from '../store/authSlice'
 import { useAppDispatch } from '../store/hooks'
 
@@ -46,7 +47,7 @@ export function LoginPage() {
       <div className="relative hidden w-[62%] flex-col justify-between overflow-hidden bg-ink-900 px-16 py-14 text-white xl:flex">
         <div className="flex items-center gap-3">
           <div className="grid h-10 w-10 place-items-center rounded-xl bg-brand-500 text-ink-900">
-            <Zap size={22} strokeWidth={2.8} />
+            <VoltraMark className="h-5.5 w-auto" />
           </div>
           <div>
             <span className="text-xl font-bold tracking-tight">
@@ -97,7 +98,7 @@ export function LoginPage() {
         <div className="w-full max-w-76">
           <div className="mb-8 flex items-center gap-2.5 xl:hidden">
             <div className="grid h-8 w-8 place-items-center rounded-lg bg-brand-500 text-ink-900">
-              <Zap size={18} strokeWidth={2.8} />
+              <VoltraMark className="h-4.5 w-auto" />
             </div>
             <span className="text-base font-bold tracking-tight text-ink-900">
               Voltra<span className="text-brand-500">.</span>

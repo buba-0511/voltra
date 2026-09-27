@@ -1,9 +1,10 @@
-import { Gauge, LayoutDashboard, LogOut, Sparkles, Zap } from 'lucide-react'
+import { Gauge, LayoutDashboard, LogOut, Sparkles } from 'lucide-react'
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useLogoutMutation } from '../api/apiSlice'
 import { loggedOut } from '../store/authSlice'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
+import { VoltraMark } from '../components/VoltraMark'
 
 const navItems = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -15,7 +16,7 @@ function Logo() {
   return (
     <div className="flex items-center gap-2">
       <div className="grid h-7 w-7 place-items-center rounded-md bg-brand-500 text-ink-900">
-        <Zap size={15} strokeWidth={2.8} />
+        <VoltraMark className="h-4 w-auto" />
       </div>
       <span className="text-sm font-bold tracking-tight text-ink-900">
         Voltra<span className="text-brand-500">.</span>
