@@ -63,7 +63,7 @@ func (h *Handler) Analyze(w http.ResponseWriter, r *http.Request) {
 
 	run, err := h.Service.RunAnalysis(r.Context(), claims.TenantID)
 	if err != nil {
-		httpx.WriteError(w, http.StatusInternalServerError, "analysis failed")
+		httpx.WriteServerError(w, err, "analysis failed")
 		return
 	}
 
@@ -91,7 +91,7 @@ func (h *Handler) GetAnalysisRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		httpx.WriteError(w, http.StatusInternalServerError, "failed to load analysis run")
+		httpx.WriteServerError(w, err, "failed to load analysis run")
 		return
 	}
 
@@ -150,7 +150,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.Queries.ListAnomaliesForLatestRun(r.Context(), claims.TenantID)
 	if err != nil {
-		httpx.WriteError(w, http.StatusInternalServerError, "failed to list anomalies")
+		httpx.WriteServerError(w, err, "failed to list anomalies")
 		return
 	}
 
@@ -182,7 +182,49 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		httpx.WriteError(w, http.StatusInternalServerError, "failed to load anomaly")
+		httpx.WriteServerError(w, err, "failed to load anomaly")
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, toAnomalyDTO(a))
+}
+
+var validAnomalyStatuses = map[string]bool{
+	"OPEN": true, "IN_REVIEW": true, "RESOLVED": true, "DISMISSED": true,
+}
+
+type updateStatusRequest struct {
+	Status string `json:"status"`
+}
+
+func (h *Handler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
+	claims, ok := auth.ClaimsFromContext(r.Context())
+	if !ok {
+		httpx.WriteError(w, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	var req updateStatusRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || !validAnomalyStatuses[req.Status] {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid status")
+		return
+	}
+
+	a, err := h.Queries.UpdateAnomalyStatus(r.Context(), sqlcgen.UpdateAnomalyStatusParams{
+		TenantID: claims.TenantID, ID: id, Status: req.Status,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		httpx.WriteError(w, http.StatusNotFound, "anomaly not found")
+		return
+	}
+	if err != nil {
+		httpx.WriteServerError(w, err, "failed to update anomaly")
 		return
 	}
 

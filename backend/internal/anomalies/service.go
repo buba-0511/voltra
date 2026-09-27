@@ -4,14 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"sync"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"golang.org/x/sync/errgroup"
 
 	"energy-platform/internal/ai"
 	"energy-platform/internal/analytics"
 	sqlcgen "energy-platform/internal/db/sqlc"
 )
+
+// maxConcurrentMeterAnalysis bounds how many meters get read+analyzed at
+// once - unbounded fan-out would open one DB round trip per meter
+// simultaneously, exhausting the connection pool once the tenant has more
+// than a handful of meters.
+const maxConcurrentMeterAnalysis = 8
 
 type Service struct {
 	Queries   *sqlcgen.Queries
@@ -40,26 +48,9 @@ func (s *Service) RunAnalysis(ctx context.Context, tenantID int32) (sqlcgen.Anal
 		return s.fail(ctx, run.ID)
 	}
 
-	var classifications []ai.Classification
-	for _, m := range meters {
-		readings, err := s.Queries.ListReadingsByMeter(ctx, sqlcgen.ListReadingsByMeterParams{
-			TenantID: tenantID, MeterID: m.MeterID,
-		})
-		if err != nil {
-			return s.fail(ctx, run.ID)
-		}
-		if len(readings) < 2 {
-			continue
-		}
-		events, err := s.Queries.ListEventsByMeter(ctx, sqlcgen.ListEventsByMeterParams{
-			TenantID: tenantID, MeterID: m.MeterID,
-		})
-		if err != nil {
-			return s.fail(ctx, run.ID)
-		}
-
-		analysis := analytics.Analyze(m.MeterID, toAnalyticsReadings(readings))
-		classifications = append(classifications, ai.Classify(m.MeterID, analysis, toAIEvents(events))...)
+	classifications, err := s.classifyAll(ctx, tenantID, meters)
+	if err != nil {
+		return s.fail(ctx, run.ID)
 	}
 
 	explanations := s.explainAll(ctx, classifications)
@@ -84,6 +75,59 @@ func (s *Service) RunAnalysis(ctx context.Context, tenantID int32) (sqlcgen.Anal
 	})
 }
 
+// classifyAll reads and classifies every meter concurrently (bounded by
+// maxConcurrentMeterAnalysis) instead of one at a time - previously a
+// sequential loop, so a tenant with many meters made every "Run AI
+// Analysis" click take proportionally longer.
+func (s *Service) classifyAll(ctx context.Context, tenantID int32, meters []sqlcgen.Meter) ([]ai.Classification, error) {
+	perMeter := make([][]ai.Classification, len(meters))
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(maxConcurrentMeterAnalysis)
+
+	for i, m := range meters {
+		g.Go(func() (err error) {
+			// A panic here (nil pointer, index out of range, whatever)
+			// would otherwise take down the entire server process, not
+			// just this one meter's analysis - errgroup doesn't recover
+			// goroutine panics on its own.
+			defer func() {
+				if r := recover(); r != nil {
+					err = fmt.Errorf("panic analyzing meter %s: %v", m.MeterID, r)
+				}
+			}()
+
+			readings, err := s.Queries.ListReadingsByMeter(gctx, sqlcgen.ListReadingsByMeterParams{
+				TenantID: tenantID, MeterID: m.MeterID,
+			})
+			if err != nil {
+				return err
+			}
+			if len(readings) < 2 {
+				return nil
+			}
+			events, err := s.Queries.ListEventsByMeter(gctx, sqlcgen.ListEventsByMeterParams{
+				TenantID: tenantID, MeterID: m.MeterID,
+			})
+			if err != nil {
+				return err
+			}
+
+			analysis := analytics.Analyze(m.MeterID, toAnalyticsReadings(readings))
+			perMeter[i] = ai.Classify(m.MeterID, analysis, toAIEvents(events))
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
+	var classifications []ai.Classification
+	for _, c := range perMeter {
+		classifications = append(classifications, c...)
+	}
+	return classifications, nil
+}
+
 func (s *Service) fail(ctx context.Context, runID int64) (sqlcgen.AnalysisRun, error) {
 	run, err := s.Queries.CompleteAnalysisRun(ctx, sqlcgen.CompleteAnalysisRunParams{
 		ID: runID, Status: "FAILED", Stage: "FAILED",
@@ -104,6 +148,17 @@ func (s *Service) explainAll(ctx context.Context, classifications []ai.Classific
 		wg.Add(1)
 		go func(i int, c ai.Classification) {
 			defer wg.Done()
+			// Same reasoning as classifyAll: an unrecovered panic in any
+			// one of these would crash the whole process instead of just
+			// failing this anomaly's explanation. Fall back to the
+			// template explainer either way, same as a returned error.
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("panic explaining anomaly for %s: %v", c.MeterID, r)
+					exp, _ := ai.TemplateExplainer{}.Explain(ctx, c)
+					explanations[i] = exp
+				}
+			}()
 			exp, err := s.Explainer.Explain(ctx, c)
 			if err != nil {
 				exp, _ = ai.TemplateExplainer{}.Explain(ctx, c)

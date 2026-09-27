@@ -16,6 +16,10 @@ func main() {
 	ctx := context.Background()
 	cfg := config.Load()
 
+	if cfg.JWTSecret == "" {
+		log.Fatal("JWT_SECRET is not set - refusing to start with no signing secret")
+	}
+
 	pool, err := db.Connect(ctx, cfg.DatabaseDSN)
 	if err != nil {
 		log.Fatalf("connect db: %v", err)

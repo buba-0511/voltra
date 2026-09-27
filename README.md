@@ -4,191 +4,157 @@ MVP para gestionar medidores eléctricos y usar IA (detección estadística +
 explicación) para detectar, priorizar y recomendar acciones sobre anomalías.
 Prueba técnica: Backend + Frontend + Data + IA.
 
+## Cómo correr esto
+
+Requisito único: tener Docker en ejecución.
+
+```bash
+git clone <este repo>
+cd bia-test
+cp .env.example .env   # opcional, ver nota abajo
+./run.sh local
+```
+
+Este comando levanta el backend (`:8080`), el frontend (`:5173`) y
+Postgres, con el dataset ya cargado. El paso de `.env` es opcional: sin
+`OPENAI_API_KEY`, las explicaciones de anomalías se generan igual, pero
+con un template en lugar de un LLM real (más detalle en
+[Cómo se pensó esto](#cómo-se-pensó-esto)). Una vez finalizado:
+
+1. Abrir **http://localhost:5173**
+2. Iniciar sesión con `admin@energy-platform.local` / `demo1234`
+3. Recorrer Dashboard → Medidores → seleccionar **M-109** → Anomalías IA
+   → "Run AI Analysis" → Investigación de M-109
+
+El detalle de variables de entorno está en la sección
+[Detalle de cómo correrlo](#detalle-de-cómo-correrlo).
+
 ## Estado actual
 
-Repo en construcción, paso a paso. **El backend ya está completo y
-funcional de punta a punta**; lo que falta es el frontend:
+**El ciclo completo está funcionando de punta a punta**: Login →
+Dashboard → Medidores → Detalle → Anomalías IA → Investigación → Acción,
+todo contra datos reales.
 
 - `backend/` — módulo Go (`energy-platform`), Postgres con `sqlc` (SQL
   explícito + código Go generado, sin ORM), migraciones para el schema
   completo del ERD, y un seed que carga `readings.csv`/`events.csv` al
-  arrancar (idempotente). Login (`POST /auth/login`, `GET /auth/me`) con
-  JWT. `GET /meters`, `/meters/:id`, `/meters/:id/readings`,
-  `/dashboard/summary` con datos reales. Motor de detección +
-  clasificación + explicación (`internal/analytics` + `internal/ai`),
-  orquestado por `internal/anomalies` y expuesto en
-  `POST /ai/analyze`, `GET /ai/analysis/:id`, `GET /anomalies`,
-  `GET /anomalies/:id`. `GET /health`.
-  Corrido de punta a punta contra el dataset real: 12 medidores
-  analizados, 4 anomalías detectadas, 2 de alta prioridad — coincide
-  exacto con el ejemplo del enunciado (sección 13). Las 4 explicaciones
-  las escribió un LLM real (OpenAI), citando los números correctos.
+  arrancar (idempotente). Login (`POST /auth/login`, `GET /auth/me`,
+  `POST /auth/logout`) con JWT en cookie `httpOnly` (no en el body ni en
+  localStorage). `GET /meters`, `/meters/:id`, `/meters/:id/readings`
+  (paginado por cursor), `/meters/daily`, `/meters/:id/daily`,
+  `/dashboard/summary`. Motor de detección + clasificación + explicación
+  (`internal/analytics` + `internal/ai`), orquestado por
+  `internal/anomalies` (análisis por medidor en paralelo, acotado) y
+  expuesto en `POST /ai/analyze`, `GET /ai/analysis/:id`,
+  `GET /anomalies`, `GET /anomalies/:id`, `PATCH /anomalies/:id` (marcar
+  en revisión / descartar). Timeout por request, errores reales logueados
+  server-side. `GET /health`. Corrido de punta a punta contra el dataset
+  real: 12 medidores analizados, 4 anomalías detectadas, 2 de alta
+  prioridad — coincide exacto con el ejemplo del enunciado (sección 13).
+  Las explicaciones las escribió un LLM real (OpenAI), citando los
+  números correctos.
 - `frontend/` — Vite + React + TypeScript + Tailwind CSS v4. Redux
-  Toolkit + RTK Query para estado/data-fetching, Axios por debajo (con
-  interceptors: token automático en cada request, logout global en
-  cualquier 401). Login funcional contra el backend real, rutas
-  protegidas (`react-router-dom`), shell con nav. Marca propia ("Voltra"),
-  paleta (`brand`/`ink`) y tipografía (Geist Sans) definidas como tokens
-  de Tailwind v4. Dashboard (KPIs + hero de la anomalía top-prioridad +
-  lista), Medidores (tabla con filtros, cruzando medidores con anomalías
-  del lado del cliente) y Detalle de medidor (stat tiles + gráfico de
-  consumo diario) ya usan datos reales de la API, no mock. Anomalías IA
-  sigue siendo placeholder.
+  Toolkit + RTK Query para estado/data-fetching, Axios por debajo
+  (`withCredentials`, logout global en cualquier 401). Login funcional
+  contra el backend real, rutas protegidas (`react-router-dom`), shell
+  con sidebar en desktop y barra de navegación inferior en mobile. Marca
+  propia ("Voltra"), paleta (`brand`/`ink`) y tipografía (Geist Sans)
+  definidas como tokens de Tailwind v4. Gráficos con Recharts (línea de
+  tiempo por medidor, comparación real vs baseline con la ventana de la
+  anomalía resaltada, voltaje/factor de potencia). Dashboard, Medidores,
+  Detalle de medidor, Anomalías IA (con el botón "Run AI Analysis") e
+  Investigación (evidencia, variables que cambiaron, comparación vs
+  baseline, acciones reales) usan datos reales de la API, no mock.
+  `ErrorBoundary` global y estados de carga con skeletons en vez de texto
+  plano.
 - `data/` — `readings.csv` (4.032 lecturas, 12 medidores, 14 días) y
   `events.csv` (eventos operativos conocidos) provistos por la prueba.
 - `docker-compose.local.yaml` + `run.sh` — levanta Postgres, backend y
   frontend en modo dev.
 
-Pendiente: Anomalías IA → Investigación → Acción (botón "Run AI
-Analysis", lista completa, vista de investigación con evidencia).
+Los 4 casos que evalúa la prueba (M-104/106/109/112) fueron verificados
+contra el resultado real de `POST /ai/analyze`, no solo inspeccionados
+manualmente.
 
 ## Cómo se pensó esto
 
-El objetivo no es un CRUD de medidores, es mostrar el ciclo completo: datos
-→ análisis → anomalía → explicación → priorización → acción. Eso terminó
-condicionando casi todas las decisiones de abajo.
+El objetivo no es un CRUD de medidores, sino demostrar el ciclo completo:
+datos → análisis → anomalía → explicación → priorización → acción.
 
-Para el backend elegí Go + Postgres. El dataset es relacional de manera
-bastante directa (medidores → lecturas → eventos → anomalías), y con un
-campo `JSONB` para la evidencia de cada anomalía no hace falta modelar una
-tabla nueva por cada tipo de dato que cambia según el caso (z-scores,
-voltaje/PF, timestamps flageados, evento relacionado).
+**Backend en Go y Postgres, sin ORM.** Se utiliza `sqlc`: las consultas SQL
+se escriben a mano y se genera código Go tipado a partir de ellas — si una
+migración invalida una consulta, el error aparece al generar el código, no
+en producción. La columna `evidence` de `ANOMALIES` es de tipo JSONB
+porque su estructura varía según el tipo de anomalía, evitando modelar una
+tabla nueva por cada caso.
 
-Para hablar con la base no uso un ORM — en Go no es tan común como en otros
-lenguajes, y para el motor de detección (agregaciones, baseline por hora,
-JSONB) quería control fino sobre el SQL. Uso `sqlc`: escribo el SQL a mano
-en archivos `.sql`, y genera funciones Go tipadas a partir de eso. Si
-cambio una columna en una migración y una query deja de ser válida, me
-entero al generar el código, no en producción.
+**La inteligencia artificial está separada en dos capas independientes.**
+La detección y clasificación (si hay una anomalía, de qué tipo y con qué
+confianza) es puramente estadística — baseline horario sobre los primeros
+7 días, z-score, verificación de voltaje y factor de potencia — para
+garantizar resultados reproducibles: los casos que evalúa la prueba no
+pueden depender de que un LLM responda de forma distinta en cada corrida.
+El LLM (OpenAI) interviene únicamente para redactar `reason` y
+`recommended_action` a partir de la evidencia ya calculada, sin participar
+en el diagnóstico. Si no hay `OPENAI_API_KEY` configurada o la llamada
+falla, el sistema recurre a un template, de modo que la demo no se vea
+afectada por problemas de red o de costo (comportamiento validado con un
+servidor HTTP simulado en los tests; existe además un test independiente
+con build tag `live` que sí llama a la API real de OpenAI).
 
-La parte de IA la separé en dos capas que no se pisan. La detección y
-clasificación — ¿hay anomalía?, de qué tipo, qué tan severa, con qué
-confianza — es puramente estadística: baseline por hora del día calculado
-sobre los primeros 7 días, z-score para spikes sostenidos de consumo, y un
-chequeo de voltaje/power-factor para distinguir falla de sensor de cambio
-real de consumo. Esa parte nunca toca un LLM porque necesito que sea
-reproducible: los casos que evalúa la prueba (detectar M-109, no tratar
-M-106 como anomalía real, marcar M-112 como calidad de datos) no pueden
-depender de que un modelo responda distinto en cada corrida. Donde sí entra
-un LLM (OpenAI) es para redactar el `reason` y el `recommended_action` — le
-paso la evidencia ya calculada y le pido que la narre, no que diagnostique.
-Si no hay `OPENAI_API_KEY` o falla la llamada, cae a una explicación armada
-con template, para que el demo no se rompa por un tema de red o de costo.
-El fallback no es teórico: los tests de `internal/ai` levantan un servidor
-HTTP falso y verifican que ante un 401, una respuesta sin JSON válido, o
-sin API key configurada, siempre vuelve algo usable — y por separado hay
-un test con build tag `live` (no corre en la suite normal) que sí pega
-contra la API real de OpenAI, para confirmar que el prompt y el parseo
-funcionan con la API de verdad, no solo con el mock.
+Distinguir una falla de sensor de un cambio real de consumo no fue trivial
+en un primer intento: un z-score de voltaje/factor de potencia también se
+disparaba para M-109, cuyo factor de potencia cae genuinamente cuando sube
+el consumo. El criterio que sí separa ambos casos es la **continuidad**:
+M-109 presenta un bloque de 58 horas consecutivas sin interrupciones (un
+cambio de estado sostenido), mientras que M-112 presenta 16 lecturas
+aisladas cada 3 horas exactas, alternando de signo (ruido de sensor). El
+motor agrupa las lecturas fuera de rango en bloques contiguos y clasifica
+en función de esa continuidad, no solo de la magnitud — este
+comportamiento está cubierto por tests contra el CSV real en
+`internal/analytics/detector_test.go`.
 
-Separar "falla de sensor" de "cambio real de consumo" no salió a la primera.
-Mi primer intento marcaba calidad de datos con un z-score de voltaje/PF
-contra la media histórica del medidor — y eso también disparaba para M-109,
-cuyo power factor cae de ~0.95 a ~0.74 cuando sube el consumo (un cambio
-real, no un sensor roto). La señal que sí separa los dos casos es la
-continuidad: M-109 tiene un bloque de 58 horas seguidas sin un solo hueco,
-mismo signo y magnitud todo el tiempo (un cambio de estado sostenido);
-M-112 tiene 16 lecturas sueltas cada 3 horas exactas, alternando de signo y
-magnitud entre sí (ruido de sensor intermitente, no un estado nuevo). Ahora
-el motor agrupa las lecturas fuera de rango en bloques contiguos: un bloque
-largo se trata como evidencia de una anomalía real; lecturas aisladas y
-dispersas se marcan como calidad de datos. Queda como test en
-`internal/analytics/detector_test.go` y `internal/ai/classifier_test.go`,
-corriendo contra el CSV real — los 4 casos del dataset (M-104/106/109/112)
-más los 8 medidores sin anomalía, para no perder de vista falsos positivos.
+`POST /ai/analyze` se ejecuta de forma síncrona: el motor estadístico es
+instantáneo para 12 medidores, y las explicaciones vía LLM se generan en
+paralelo (goroutines) en lugar de secuencialmente, de modo que la corrida
+completa toma aproximadamente 3 segundos. `GET /anomalies` devuelve
+únicamente las anomalías del último análisis ejecutado, sin acumular
+resultados entre corridas.
 
-Cada racha de consumo también queda etiquetada con dos datos extra, baratos
-de calcular con lo que ya teníamos: si sigue activa (`Ongoing`, el bloque
-llega hasta la última lectura del dataset) o ya se resolvió sola, y si el
-cambio fue abrupto (`STEP`, la desviación ya está casi completa en la
-primera lectura fuera de rango) o gradual (`GRADUAL`, tarda varias horas en
-llegar a su punto máximo). Esto separa dos categorías que el enunciado pide
-distinguir (sección 8: "spikes/cambios bruscos" vs "cambios persistentes")
-y que hasta ahora tratábamos igual — y le da más sustancia al `reason` que
-va a redactar el LLM en la pieza 5 ("subió 110% de forma abrupta y sigue
-así 2 días después" en vez de solo "subió 110%").
+**Frontend en React, Vite y Tailwind**, con Redux Toolkit y RTK Query
+sobre Axios. Se definió una identidad de marca propia ("Voltra", paleta
+`brand`/`ink`, tipografía Geist Sans) en lugar de dejar la interfaz
+genérica, buscando que el login se perciba como el de un producto SaaS
+real y no como una pantalla de evaluación.
 
-`POST /ai/analyze` corre todo el pipeline de forma síncrona — para 12
-medidores el motor estadístico es instantáneo, y lo único que tarda es el
-LLM. En vez de llamarlo una anomalía a la vez (que con 4 anomalías serían
-~12-15s en serie), las explicaciones salen en paralelo con goroutines, así
-que la corrida completa (detección + clasificación + 4 llamadas a OpenAI)
-tarda ~3s. No armé infraestructura de polling/estado-en-progreso porque acá
-no hace falta — para un dataset que creciera a cientos de medidores sí
-tendría sentido, pero no para este. `GET /anomalies` devuelve solo las
-anomalías del último análisis corrido (no las de cada click acumulado) —
-correrlo de nuevo reemplaza lo que se muestra, no lo duplica.
+**Seguridad y escalabilidad, incorporadas sobre el producto ya
+funcional.** El JWT se almacena en una cookie `httpOnly` (no en
+`localStorage`, por lo que no puede ser leído por un script inyectado) y
+el servidor no inicia si falta la variable `JWT_SECRET`, en lugar de
+recurrir a un valor por defecto silencioso. Con 12 medidores y 4.032
+lecturas estas decisiones no se notan en el uso diario, pero `GET /meters`
+ejecutaba una consulta de lecturas por medidor (problema N+1) y el
+timeline de "todos los medidores" solicitaba las lecturas crudas de cada
+uno por separado; ambos casos se reemplazaron por una única consulta
+agregada en Postgres, y `/meters/:id/readings` quedó paginado por cursor
+para evitar respuestas sin límite si la frecuencia de datos aumenta.
 
-Encontré el mismo bug del offset de timezone (pgx decodificando con
-`time.Local`) por segunda vez, esta vez escondido dentro del JSON de
-`evidence` (`related_event.timestamp` salía con offset de mi máquina en
-vez de `Z`) — se me había colado porque ese campo se serializa en memoria
-antes de tocar `httpx.FormatTime`, que es donde estaba el fix la primera
-vez. Ahora se fuerza `.UTC()` apenas se leen los timestamps desde la base,
-en el punto de conversión, no en cada lugar donde se despliegan.
+Una decisión no solicitada por el enunciado: se incorporó `tenant_id` en
+todas las tablas desde el modelo de datos, aunque el producto opera hoy
+con un único tenant precargado. Separar por tenant una vez que los datos
+ya están mezclados implica una migración costosa, mientras que incluirlo
+desde el diseño inicial no tiene costo adicional.
 
-Frontend: React + Vite + TypeScript + Tailwind, buscando que se sienta como
-un producto real y no como pantallas de prueba, sin perder velocidad de
-desarrollo en el camino. El manejo de estado/data-fetching es Redux
-Toolkit + RTK Query, con Axios por debajo en vez de `fetch` — así los
-interceptors quedan en un solo lugar: uno de request que le pega el token
-a cada llamada, y uno de response que ante cualquier 401 limpia la sesión
-globalmente, sin que cada pantalla tenga que acordarse de manejarlo. Para
-evitar un import circular (el store necesita a Axios vía RTK Query, y si
-Axios necesitara al store para hacer logout en el 401 se cierra el
-círculo), el interceptor no importa el store directo — avisa a través de
-un pub/sub chico (`api/authEvents.ts`), y es el store el que se suscribe
-una vez, al crearse.
+**Alcance excluido deliberadamente:**
 
-Le puse nombre e identidad propia al producto — "Voltra" — en vez de
-dejarlo como "AI Energy Management" genérico en toda la UI. La paleta
-(`brand` teal + `ink` navy) y la tipografía (Geist Sans, self-hosted para
-no depender de una CDN externa durante la demo) están como tokens de
-Tailwind v4 en `index.css`, no como hex sueltos copiados en cada
-componente. El login tiene un panel de marca a la izquierda con el
-propósito del producto en criollo, sin mencionar que esto es una prueba
-técnica — la idea es que se sienta como el login de un SaaS real, no como
-una pantalla de demo.
-
-El gráfico de consumo (Detalle de medidor) es un `LineChart` propio en SVG
-puro, sin librería — línea de 2px con extremos redondeados, crosshair que
-sigue el mouse y tooltip, sin depender de color solo para leer el valor
-(el tooltip siempre trae el número). La tabla de Medidores cruza dos
-respuestas de la API del lado del cliente (`/meters` + `/anomalies`) para
-armar las columnas "Estado" y "Anomalía" del enunciado (sección 6), que
-usan vocabularios distintos — Estado es OK/Alert/Critical, Anomalía es la
-severidad HIGH/MEDIUM/LOW — en vez de agregar un endpoint nuevo solo para
-eso.
-
-Mientras conectaba el Dashboard encontré otro bug real: `/dashboard/summary`
-contaba anomalías de *todos* los análisis corridos históricamente, no solo
-el último — cada click en "Run AI Analysis" sumaba de nuevo en vez de
-reemplazar. Quedó igual que `/anomalies`: escopeado al último
-`analysis_run` completado.
-
-Para el login usé JWT con un solo usuario demo seedeado. Cubre el flujo
-Login → Dashboard sin construir un sistema de registro/roles que nadie va a
-usar en una demo de 10 minutos.
-
-Una que nadie pidió: le metí `tenant_id` a todas las tablas desde el modelo
-de datos, aunque hoy el producto opera con un único tenant seedeado y no
-hay UI para crear o cambiar de tenant. Es una decisión de esquema, no de
-producto — separar por tenant después de tener datos mezclados es una
-migración fea, y hacerlo desde el día uno no cuesta nada.
-
-Y todo el stack levanta con `./run.sh local` — lo único que necesita quien
-evalúe esto es tener Docker corriendo.
-
-**Lo que queda afuera, a propósito:**
-
-- UI multi-tenant (alta/cambio de tenant) — el esquema lo soporta, el
-  producto no lo expone.
-- Tiempo real — el análisis se dispara a mano con "Run AI Analysis", no hay
-  websockets ni polling agresivo.
-- Modelos entrenados — la detección es estadística explicable, no una caja
-  negra.
-- Tests end-to-end o CI/CD — la cobertura se concentra en el motor de
-  detección/clasificación, que es lo que evalúa la prueba.
+- UI multi-tenant (alta o cambio de tenant): el esquema lo soporta, pero
+  el producto no lo expone actualmente.
+- Procesamiento en tiempo real: el análisis se ejecuta manualmente
+  mediante "Run AI Analysis"; no hay websockets ni polling continuo.
+- Modelos entrenados: la detección es estadística y explicable, no una
+  caja negra.
+- Tests end-to-end o CI/CD: la cobertura se concentra en el motor de
+  detección y clasificación, que es lo que evalúa la prueba.
 
 ## Modelo de datos
 
@@ -299,7 +265,7 @@ Investigación sin modelar una tabla nueva por cada tipo de evidencia.
 │   │   ├── ai/              # clasificación por reglas + explicación (template/OpenAI)
 │   │   ├── analytics/       # baseline por hora, z-score, calidad de datos
 │   │   ├── anomalies/       # orquesta analytics+ai, /ai/analyze, /ai/analysis/:id, /anomalies
-│   │   ├── auth/            # password hashing, JWT, middleware, /auth/login y /auth/me
+│   │   ├── auth/            # password hashing, JWT en cookie httpOnly, /auth/login, /auth/me, /auth/logout
 │   │   ├── config/
 │   │   ├── db/
 │   │   │   ├── migrations/  # SQL crudo, fuente de verdad del schema
@@ -308,7 +274,7 @@ Investigación sin modelar una tabla nueva por cada tipo de evidencia.
 │   │   ├── dashboard/       # GET /dashboard/summary
 │   │   ├── httpx/           # helpers HTTP compartidos (JSON, formato de fecha)
 │   │   ├── httpserver/      # router + CORS, arma todas las rutas
-│   │   ├── meters/          # GET /meters, /meters/:id, /meters/:id/readings
+│   │   ├── meters/          # GET /meters, /meters/:id, /meters/:id/readings (paginado), /meters/daily
 │   │   └── seed/            # tenant + usuario demo + carga de readings/events.csv
 │   ├── sqlc.yaml
 │   ├── Dockerfile
@@ -317,9 +283,9 @@ Investigación sin modelar una tabla nueva por cada tipo de evidencia.
 │   ├── src/
 │   │   ├── api/              # axios + interceptors, RTK Query (apiSlice.ts)
 │   │   ├── auth/              # ProtectedRoute (guard de rutas)
-│   │   ├── components/       # LineChart, Sparkline, StatTile, Badge
-│   │   ├── layout/            # shell con nav + logout
-│   │   ├── pages/              # Login, Dashboard, Medidores, Detalle (Anomalías: placeholder)
+│   │   ├── components/       # TimeSeriesChart (Recharts), StatTile, Badge, Skeleton, ErrorBoundary
+│   │   ├── layout/            # shell con sidebar (desktop) / nav inferior (mobile) + logout
+│   │   ├── pages/              # Login, Dashboard, Medidores, Detalle, Anomalías, Investigación
 │   │   └── store/              # Redux: authSlice + store.ts
 │   └── Dockerfile
 ├── data/
@@ -329,17 +295,17 @@ Investigación sin modelar una tabla nueva por cada tipo de evidencia.
 └── run.sh
 ```
 
-## Cómo correr (local, con Docker)
+## Detalle de cómo correrlo
 
 ```bash
 ./run.sh local
 ```
 
-Esto levanta:
+Este comando levanta:
 
 - **backend** — Go, `go run ./cmd/server`, puerto `8080` (`GET /health`)
 - **frontend** — Vite dev server, puerto `5173`
-- **db** — Postgres 16, puerto host `5433` (usuario/clave/db: `app`/`app`/`energy`)
+- **db** — Postgres 16, puerto host `5433` (usuario/clave/base: `app`/`app`/`energy`)
 
 ## Variables de entorno (backend)
 
@@ -348,15 +314,20 @@ Esto levanta:
 | `PORT`          | `8080`                                                       |
 | `DATABASE_DSN`  | `postgres://app:app@db:5432/energy?sslmode=disable` (en Docker) |
 | `DATA_DIR`      | `../data` — carpeta con `readings.csv`/`events.csv` para el seed |
-| `JWT_SECRET`    | `dev-secret-change-me` — cambiar en cualquier entorno real |
-| `OPENAI_API_KEY` | (sin default) — si no está seteada, las explicaciones de anomalías caen a template en vez de LLM |
+| `JWT_SECRET`    | sin default — el servidor no inicia si esta variable no está definida |
+| `OPENAI_API_KEY` | sin default — si no está definida, las explicaciones de anomalías se generan por template en lugar de LLM |
 
-**Usuario demo seedeado:** `admin@energy-platform.local` / `demo1234`
-(un solo tenant, un solo usuario — ver [Alcance de diseño](#cómo-se-pensó-esto)).
+Para levantar todo con `./run.sh local` (Docker Compose), `OPENAI_API_KEY`
+se toma de un `.env` en la raíz del repo (ver `.env.example`); ese archivo
+está en `.gitignore` y no llega al control de versiones.
 
-**Probar el explainer de OpenAI contra la API real** (no corre en
-`go test ./...` normal, hay que pedirlo explícitamente para no gastar
-créditos en cada corrida):
+**Usuario de demostración precargado:** `admin@energy-platform.local` /
+`demo1234` (un único tenant, un único usuario — ver
+[Cómo se pensó esto](#cómo-se-pensó-esto)).
+
+**Para probar el explainer de OpenAI contra la API real** (no se ejecuta
+como parte de `go test ./...`; debe solicitarse explícitamente para
+evitar consumir créditos en cada corrida):
 
 ```bash
 cd backend

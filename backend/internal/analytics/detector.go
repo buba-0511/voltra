@@ -48,6 +48,33 @@ func BuildBaseline(baselineReadings []Reading) MeterBaseline {
 	return b
 }
 
+// baselineTotalFor projects the baseline's hourly profile onto a set of
+// readings, summing the expected consumption for each reading's hour of
+// day - the same accumulation a ConsumptionRun's BaselineTotal uses, but
+// reusable for any reading window.
+func baselineTotalFor(baseline MeterBaseline, readings []Reading) float64 {
+	total := 0.0
+	for _, r := range readings {
+		total += baseline.Hourly.Mean[r.Timestamp.Hour()]
+	}
+	return total
+}
+
+// MeterPeriodBaseline projects a meter's expected total consumption for
+// its whole reading period, using the first half (already time-sorted) to
+// build the hourly baseline profile - the same baseline Analyze scores
+// anomalies against, just totaled over the full period instead of a
+// single flagged run. This is what lets a meter with no detected anomaly
+// still report a baseline/variation (challenge brief section 6's example
+// table shows a variación for every meter, not just flagged ones).
+func MeterPeriodBaseline(readings []Reading) float64 {
+	if len(readings) == 0 {
+		return 0
+	}
+	baseline := BuildBaseline(readings[:len(readings)/2])
+	return baselineTotalFor(baseline, readings)
+}
+
 // Analyze splits a meter's full, time-sorted reading history in half: the
 // first half establishes the baseline, the second half is scored against
 // it for consumption-spike runs and electrical data-quality
@@ -147,13 +174,11 @@ func buildConsumptionRuns(readings []Reading, zscores []float64, flagged []bool,
 
 func buildRun(readings []Reading, zscores []float64, baseline MeterBaseline, ongoing bool) ConsumptionRun {
 	actualTotal := 0.0
-	baselineTotal := 0.0
 	sumAbsZ := 0.0
 	peakAbsZ := 0.0
 	peakIdx := 0
 	for i, r := range readings {
 		actualTotal += r.ConsumptionKWh
-		baselineTotal += baseline.Hourly.Mean[r.Timestamp.Hour()]
 		az := abs(zscores[i])
 		sumAbsZ += az
 		if az > peakAbsZ {
@@ -161,6 +186,7 @@ func buildRun(readings []Reading, zscores []float64, baseline MeterBaseline, ong
 			peakIdx = i
 		}
 	}
+	baselineTotal := baselineTotalFor(baseline, readings)
 	variation := 0.0
 	if baselineTotal > 0 {
 		variation = (actualTotal - baselineTotal) / baselineTotal * 100

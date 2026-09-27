@@ -14,6 +14,11 @@ type Querier interface {
 	CreateAnalysisRun(ctx context.Context, tenantID int32) (AnalysisRun, error)
 	CreateTenant(ctx context.Context, arg CreateTenantParams) (Tenant, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	DailyConsumptionAllMeters(ctx context.Context, tenantID int32) ([]DailyConsumptionAllMetersRow, error)
+	// Aggregates in Postgres instead of pulling every raw reading to the app
+	// to sum client-side - the response stays bounded by day count, not by
+	// reading count, no matter how fine-grained the underlying data gets.
+	DailyConsumptionByMeter(ctx context.Context, arg DailyConsumptionByMeterParams) ([]DailyConsumptionByMeterRow, error)
 	// Scoped to the latest completed run, same as ListAnomaliesForLatestRun -
 	// otherwise this grows every time "Run AI Analysis" is clicked instead of
 	// reflecting the current state.
@@ -36,6 +41,15 @@ type Querier interface {
 	ListMeters(ctx context.Context, tenantID int32) ([]Meter, error)
 	ListMetersWithConsumption(ctx context.Context, tenantID int32) ([]ListMetersWithConsumptionRow, error)
 	ListReadingsByMeter(ctx context.Context, arg ListReadingsByMeterParams) ([]Reading, error)
+	// Cursor (keyset) pagination on timestamp: a meter's readings have no
+	// upper bound on how many rows they can grow to, so this endpoint must
+	// never be able to return an unbounded response.
+	ListReadingsByMeterPage(ctx context.Context, arg ListReadingsByMeterPageParams) ([]Reading, error)
+	// Used to compute every meter's baseline in one round trip instead of one
+	// query per meter (see meters.Handler.List) - still O(readings) in Go,
+	// but O(1) in database round trips regardless of meter count.
+	ListReadingsByTenant(ctx context.Context, tenantID int32) ([]Reading, error)
+	UpdateAnomalyStatus(ctx context.Context, arg UpdateAnomalyStatusParams) (Anomaly, error)
 	UpsertMeter(ctx context.Context, arg UpsertMeterParams) (Meter, error)
 }
 

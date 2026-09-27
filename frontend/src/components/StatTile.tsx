@@ -21,8 +21,14 @@ export function StatTile({ label, value, sub, subTone = 'default', icon }: StatT
         <span>{label}</span>
         {icon}
       </div>
-      <div className="mt-3 text-2xl font-semibold tracking-tight text-ink-900">{value}</div>
-      {sub && <div className={`mt-1 text-[11px] ${subToneClass[subTone]}`}>{sub}</div>}
+      {/* Fixed min-heights so a tile's content (e.g. "Último análisis"
+          going from "—" to a full date/time string) doesn't change the
+          tile's height and, via CSS grid's row stretch, the whole row's
+          height along with it. */}
+      <div className="mt-3 line-clamp-2 min-h-16 text-2xl font-semibold tracking-tight text-ink-900">
+        {value}
+      </div>
+      <div className={`mt-1 min-h-3.5 text-[11px] ${subToneClass[subTone]}`}>{sub}</div>
     </div>
   )
 }

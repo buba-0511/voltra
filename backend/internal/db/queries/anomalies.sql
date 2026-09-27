@@ -21,3 +21,8 @@ ORDER BY CASE a.severity WHEN 'HIGH' THEN 0 WHEN 'MEDIUM' THEN 1 ELSE 2 END, a.c
 
 -- name: GetAnomalyByID :one
 SELECT * FROM anomalies WHERE tenant_id = $1 AND id = $2;
+
+-- name: UpdateAnomalyStatus :one
+UPDATE anomalies SET status = $3
+WHERE tenant_id = $1 AND id = $2
+RETURNING *;

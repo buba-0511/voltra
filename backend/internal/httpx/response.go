@@ -2,6 +2,7 @@ package httpx
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 )
@@ -14,6 +15,16 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 
 func WriteError(w http.ResponseWriter, status int, msg string) {
 	WriteJSON(w, status, map[string]string{"error": msg})
+}
+
+// WriteServerError logs the real underlying error server-side (nothing
+// else in this codebase does - a failure would otherwise vanish into a
+// generic client-facing message with no way to diagnose it after the
+// fact) and responds with a 500 and the given client-safe message,
+// without leaking internals like SQL errors to the response body.
+func WriteServerError(w http.ResponseWriter, err error, msg string) {
+	log.Printf("%s: %v", msg, err)
+	WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": msg})
 }
 
 // FormatTime renders t in UTC/RFC3339 regardless of the server process's

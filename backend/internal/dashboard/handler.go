@@ -44,26 +44,26 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 
 	metersCount, err := h.Queries.DashboardMeterCount(ctx, claims.TenantID)
 	if err != nil {
-		httpx.WriteError(w, http.StatusInternalServerError, "failed to count meters")
+		httpx.WriteServerError(w, err, "failed to count meters")
 		return
 	}
 
 	totalConsumption, err := h.Queries.DashboardTotalConsumption(ctx, claims.TenantID)
 	if err != nil {
-		httpx.WriteError(w, http.StatusInternalServerError, "failed to sum consumption")
+		httpx.WriteServerError(w, err, "failed to sum consumption")
 		return
 	}
 
 	anomalyCounts, err := h.Queries.DashboardAnomalyCounts(ctx, claims.TenantID)
 	if err != nil {
-		httpx.WriteError(w, http.StatusInternalServerError, "failed to count anomalies")
+		httpx.WriteServerError(w, err, "failed to count anomalies")
 		return
 	}
 
 	var last *lastAnalysis
 	run, err := h.Queries.DashboardLatestAnalysisRun(ctx, claims.TenantID)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		httpx.WriteError(w, http.StatusInternalServerError, "failed to load last analysis")
+		httpx.WriteServerError(w, err, "failed to load last analysis")
 		return
 	}
 	if err == nil {

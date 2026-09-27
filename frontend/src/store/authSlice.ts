@@ -1,33 +1,33 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit'
-import { clearToken, getToken, setToken } from '../api/tokenStorage'
+import { clearSession, hasSession, setSession } from '../api/sessionFlag'
 import type { User } from '../api/types'
 
 interface AuthState {
   user: User | null
-  hasToken: boolean
+  hasSession: boolean
 }
 
 const initialState: AuthState = {
   user: null,
-  hasToken: !!getToken(),
+  hasSession: hasSession(),
 }
 
 const authSlice = createSlice({
   name: 'auth',
   initialState,
   reducers: {
-    credentialsSet(state, action: PayloadAction<{ token: string; user: User }>) {
-      setToken(action.payload.token)
+    credentialsSet(state, action: PayloadAction<{ user: User }>) {
+      setSession()
       state.user = action.payload.user
-      state.hasToken = true
+      state.hasSession = true
     },
     userLoaded(state, action: PayloadAction<User>) {
       state.user = action.payload
     },
     loggedOut(state) {
-      clearToken()
+      clearSession()
       state.user = null
-      state.hasToken = false
+      state.hasSession = false
     },
   },
 })
