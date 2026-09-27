@@ -13,7 +13,6 @@ export interface User {
 }
 
 export interface LoginResponse {
-  token: string
   user: User
 }
 
@@ -23,6 +22,8 @@ export interface MeterSummary {
   location: string
   status: string
   consumption_kwh: number
+  baseline_kwh: number
+  variation_pct: number
 }
 
 export interface MeterDetail extends MeterSummary {
@@ -38,6 +39,24 @@ export interface Reading {
   current_a: number
   power_factor: number
   status: string
+}
+
+export interface ReadingsPage {
+  readings: Reading[]
+  next_cursor: string | null
+}
+
+export interface DailyPoint {
+  day: string
+  consumption_kwh: number
+  avg_voltage_v: number
+  avg_power_factor: number
+}
+
+export interface MeterDailyRow {
+  meter_id: string
+  day: string
+  consumption_kwh: number
 }
 
 export interface DashboardSummary {

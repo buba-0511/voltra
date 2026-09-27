@@ -2,7 +2,7 @@ import { AlertCircle, Zap } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { useLoginMutation } from '../api/apiSlice'
-import { getToken } from '../api/tokenStorage'
+import { hasSession } from '../api/sessionFlag'
 import { credentialsSet } from '../store/authSlice'
 import { useAppDispatch } from '../store/hooks'
 
@@ -20,7 +20,7 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  if (getToken()) {
+  if (hasSession()) {
     return <Navigate to="/dashboard" replace />
   }
 
