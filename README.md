@@ -29,15 +29,18 @@ funcional de punta a punta**; lo que falta es el frontend:
   cualquier 401). Login funcional contra el backend real, rutas
   protegidas (`react-router-dom`), shell con nav. Marca propia ("Voltra"),
   paleta (`brand`/`ink`) y tipografía (Geist Sans) definidas como tokens
-  de Tailwind v4. Las pantallas de Dashboard/Medidores/Anomalías todavía
-  son placeholders — el contenido real es la próxima pieza.
+  de Tailwind v4. Dashboard (KPIs + hero de la anomalía top-prioridad +
+  lista), Medidores (tabla con filtros, cruzando medidores con anomalías
+  del lado del cliente) y Detalle de medidor (stat tiles + gráfico de
+  consumo diario) ya usan datos reales de la API, no mock. Anomalías IA
+  sigue siendo placeholder.
 - `data/` — `readings.csv` (4.032 lecturas, 12 medidores, 14 días) y
   `events.csv` (eventos operativos conocidos) provistos por la prueba.
 - `docker-compose.local.yaml` + `run.sh` — levanta Postgres, backend y
   frontend en modo dev.
 
-Pendiente: el contenido real de Dashboard → Medidores → Detalle →
-Anomalías IA → Investigación → Acción (hoy son placeholders).
+Pendiente: Anomalías IA → Investigación → Acción (botón "Run AI
+Analysis", lista completa, vista de investigación con evidencia).
 
 ## Cómo se pensó esto
 
@@ -146,6 +149,22 @@ componente. El login tiene un panel de marca a la izquierda con el
 propósito del producto en criollo, sin mencionar que esto es una prueba
 técnica — la idea es que se sienta como el login de un SaaS real, no como
 una pantalla de demo.
+
+El gráfico de consumo (Detalle de medidor) es un `LineChart` propio en SVG
+puro, sin librería — línea de 2px con extremos redondeados, crosshair que
+sigue el mouse y tooltip, sin depender de color solo para leer el valor
+(el tooltip siempre trae el número). La tabla de Medidores cruza dos
+respuestas de la API del lado del cliente (`/meters` + `/anomalies`) para
+armar las columnas "Estado" y "Anomalía" del enunciado (sección 6), que
+usan vocabularios distintos — Estado es OK/Alert/Critical, Anomalía es la
+severidad HIGH/MEDIUM/LOW — en vez de agregar un endpoint nuevo solo para
+eso.
+
+Mientras conectaba el Dashboard encontré otro bug real: `/dashboard/summary`
+contaba anomalías de *todos* los análisis corridos históricamente, no solo
+el último — cada click en "Run AI Analysis" sumaba de nuevo en vez de
+reemplazar. Quedó igual que `/anomalies`: escopeado al último
+`analysis_run` completado.
 
 Para el login usé JWT con un solo usuario demo seedeado. Cubre el flujo
 Login → Dashboard sin construir un sistema de registro/roles que nadie va a
@@ -298,8 +317,9 @@ Investigación sin modelar una tabla nueva por cada tipo de evidencia.
 │   ├── src/
 │   │   ├── api/              # axios + interceptors, RTK Query (apiSlice.ts)
 │   │   ├── auth/              # ProtectedRoute (guard de rutas)
+│   │   ├── components/       # LineChart, Sparkline, StatTile, Badge
 │   │   ├── layout/            # shell con nav + logout
-│   │   ├── pages/              # Login + Dashboard/Medidores/Anomalías (placeholders)
+│   │   ├── pages/              # Login, Dashboard, Medidores, Detalle (Anomalías: placeholder)
 │   │   └── store/              # Redux: authSlice + store.ts
 │   └── Dockerfile
 ├── data/

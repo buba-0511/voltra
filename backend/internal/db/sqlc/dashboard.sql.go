@@ -12,9 +12,15 @@ import (
 const dashboardAnomalyCounts = `-- name: DashboardAnomalyCounts :one
 SELECT
     count(*) AS total,
-    count(*) FILTER (WHERE severity = 'HIGH') AS high_priority
+    count(*) FILTER (WHERE anomalies.severity = 'HIGH') AS high_priority
 FROM anomalies
-WHERE tenant_id = $1
+WHERE anomalies.tenant_id = $1
+  AND anomalies.analysis_run_id = (
+      SELECT ar.id FROM analysis_runs ar
+      WHERE ar.tenant_id = $1 AND ar.status = 'DONE'
+      ORDER BY ar.started_at DESC
+      LIMIT 1
+  )
 `
 
 type DashboardAnomalyCountsRow struct {
@@ -22,6 +28,9 @@ type DashboardAnomalyCountsRow struct {
 	HighPriority int64 `json:"high_priority"`
 }
 
+// Scoped to the latest completed run, same as ListAnomaliesForLatestRun -
+// otherwise this grows every time "Run AI Analysis" is clicked instead of
+// reflecting the current state.
 func (q *Queries) DashboardAnomalyCounts(ctx context.Context, tenantID int32) (DashboardAnomalyCountsRow, error) {
 	row := q.db.QueryRow(ctx, dashboardAnomalyCounts, tenantID)
 	var i DashboardAnomalyCountsRow
