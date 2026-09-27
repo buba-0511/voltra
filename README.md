@@ -6,41 +6,49 @@ Prueba técnica: Backend + Frontend + Data + IA.
 
 ## Estado actual
 
-Repo en construcción, paso a paso. **El backend ya está completo y
-funcional de punta a punta**; lo que falta es el frontend:
+**El ciclo completo está funcionando de punta a punta**: Login →
+Dashboard → Medidores → Detalle → Anomalías IA → Investigación → Acción,
+todo contra datos reales.
 
 - `backend/` — módulo Go (`energy-platform`), Postgres con `sqlc` (SQL
   explícito + código Go generado, sin ORM), migraciones para el schema
   completo del ERD, y un seed que carga `readings.csv`/`events.csv` al
-  arrancar (idempotente). Login (`POST /auth/login`, `GET /auth/me`) con
-  JWT. `GET /meters`, `/meters/:id`, `/meters/:id/readings`,
-  `/dashboard/summary` con datos reales. Motor de detección +
-  clasificación + explicación (`internal/analytics` + `internal/ai`),
-  orquestado por `internal/anomalies` y expuesto en
-  `POST /ai/analyze`, `GET /ai/analysis/:id`, `GET /anomalies`,
-  `GET /anomalies/:id`. `GET /health`.
-  Corrido de punta a punta contra el dataset real: 12 medidores
-  analizados, 4 anomalías detectadas, 2 de alta prioridad — coincide
-  exacto con el ejemplo del enunciado (sección 13). Las 4 explicaciones
-  las escribió un LLM real (OpenAI), citando los números correctos.
+  arrancar (idempotente). Login (`POST /auth/login`, `GET /auth/me`,
+  `POST /auth/logout`) con JWT en cookie `httpOnly` (no en el body ni en
+  localStorage). `GET /meters`, `/meters/:id`, `/meters/:id/readings`
+  (paginado por cursor), `/meters/daily`, `/meters/:id/daily`,
+  `/dashboard/summary`. Motor de detección + clasificación + explicación
+  (`internal/analytics` + `internal/ai`), orquestado por
+  `internal/anomalies` (análisis por medidor en paralelo, acotado) y
+  expuesto en `POST /ai/analyze`, `GET /ai/analysis/:id`,
+  `GET /anomalies`, `GET /anomalies/:id`, `PATCH /anomalies/:id` (marcar
+  en revisión / descartar). Timeout por request, errores reales logueados
+  server-side. `GET /health`. Corrido de punta a punta contra el dataset
+  real: 12 medidores analizados, 4 anomalías detectadas, 2 de alta
+  prioridad — coincide exacto con el ejemplo del enunciado (sección 13).
+  Las explicaciones las escribió un LLM real (OpenAI), citando los
+  números correctos.
 - `frontend/` — Vite + React + TypeScript + Tailwind CSS v4. Redux
-  Toolkit + RTK Query para estado/data-fetching, Axios por debajo (con
-  interceptors: token automático en cada request, logout global en
-  cualquier 401). Login funcional contra el backend real, rutas
-  protegidas (`react-router-dom`), shell con nav. Marca propia ("Voltra"),
-  paleta (`brand`/`ink`) y tipografía (Geist Sans) definidas como tokens
-  de Tailwind v4. Dashboard (KPIs + hero de la anomalía top-prioridad +
-  lista), Medidores (tabla con filtros, cruzando medidores con anomalías
-  del lado del cliente) y Detalle de medidor (stat tiles + gráfico de
-  consumo diario) ya usan datos reales de la API, no mock. Anomalías IA
-  sigue siendo placeholder.
+  Toolkit + RTK Query para estado/data-fetching, Axios por debajo
+  (`withCredentials`, logout global en cualquier 401). Login funcional
+  contra el backend real, rutas protegidas (`react-router-dom`), shell
+  con sidebar en desktop y barra de navegación inferior en mobile. Marca
+  propia ("Voltra"), paleta (`brand`/`ink`) y tipografía (Geist Sans)
+  definidas como tokens de Tailwind v4. Gráficos con Recharts (línea de
+  tiempo por medidor, comparación real vs baseline con la ventana de la
+  anomalía resaltada, voltaje/factor de potencia). Dashboard, Medidores,
+  Detalle de medidor, Anomalías IA (con el botón "Run AI Analysis") e
+  Investigación (evidencia, variables que cambiaron, comparación vs
+  baseline, acciones reales) usan datos reales de la API, no mock.
+  `ErrorBoundary` global y estados de carga con skeletons en vez de texto
+  plano.
 - `data/` — `readings.csv` (4.032 lecturas, 12 medidores, 14 días) y
   `events.csv` (eventos operativos conocidos) provistos por la prueba.
 - `docker-compose.local.yaml` + `run.sh` — levanta Postgres, backend y
   frontend en modo dev.
 
-Pendiente: Anomalías IA → Investigación → Acción (botón "Run AI
-Analysis", lista completa, vista de investigación con evidencia).
+Los 4 casos que evalúa la prueba (M-104/106/109/112) están verificados
+contra el resultado real de `POST /ai/analyze`, no solo revisados a ojo.
 
 ## Cómo se pensó esto
 
@@ -166,9 +174,34 @@ el último — cada click en "Run AI Analysis" sumaba de nuevo en vez de
 reemplazar. Quedó igual que `/anomalies`: escopeado al último
 `analysis_run` completado.
 
+El modal de "Run AI Analysis" muestra las 7 etapas del enunciado (sección
+13: Lecturas→Baseline→Detección→Correlación→Eventos→Explicación→
+Recomendación) revelándolas de a una cada ~400ms mientras la llamada real
+corre en paralelo — pero el resultado final ("N anomalías detectadas")
+nunca se muestra hasta que la respuesta real del backend llega, así que el
+número que ve el usuario siempre es el de verdad, nunca inventado durante
+la espera.
+
+Los botones "Marcar en revisión"/"Descartar" de Investigación pegan a un
+`PATCH /anomalies/:id` real (la tabla `anomalies` ya tenía la columna
+`status` sin usar desde el modelo de datos original). Dejé afuera "Crear
+orden de trabajo" del mockup de referencia — no hay ningún sistema de
+tickets para crear algo ahí, hubiera sido un botón puramente decorativo.
+
 Para el login usé JWT con un solo usuario demo seedeado. Cubre el flujo
 Login → Dashboard sin construir un sistema de registro/roles que nadie va a
-usar en una demo de 10 minutos.
+usar en una demo de 10 minutos. El JWT vive en una cookie `httpOnly`, no en
+`localStorage` — un script inyectado no puede leerlo.
+
+Con 12 medidores y 4.032 lecturas nada de esto se nota, pero hay un par de
+cosas que se hubieran roto con más datos: `GET /meters` hacía una query de
+lecturas por medidor (N+1), y el timeline de "todos los medidores" del
+frontend pedía las lecturas crudas de cada uno por separado. Las cambié
+por una sola query agregada en Postgres para todo el tenant en cada caso,
+y paginé `/meters/:id/readings` por cursor para que la respuesta no crezca
+sin límite si la frecuencia de datos aumenta. El análisis por medidor
+también pasó de correr secuencial a correr en paralelo (acotado, para no
+agotar el pool de conexiones).
 
 Una que nadie pidió: le metí `tenant_id` a todas las tablas desde el modelo
 de datos, aunque hoy el producto opera con un único tenant seedeado y no
@@ -299,7 +332,7 @@ Investigación sin modelar una tabla nueva por cada tipo de evidencia.
 │   │   ├── ai/              # clasificación por reglas + explicación (template/OpenAI)
 │   │   ├── analytics/       # baseline por hora, z-score, calidad de datos
 │   │   ├── anomalies/       # orquesta analytics+ai, /ai/analyze, /ai/analysis/:id, /anomalies
-│   │   ├── auth/            # password hashing, JWT, middleware, /auth/login y /auth/me
+│   │   ├── auth/            # password hashing, JWT en cookie httpOnly, /auth/login, /auth/me, /auth/logout
 │   │   ├── config/
 │   │   ├── db/
 │   │   │   ├── migrations/  # SQL crudo, fuente de verdad del schema
@@ -308,7 +341,7 @@ Investigación sin modelar una tabla nueva por cada tipo de evidencia.
 │   │   ├── dashboard/       # GET /dashboard/summary
 │   │   ├── httpx/           # helpers HTTP compartidos (JSON, formato de fecha)
 │   │   ├── httpserver/      # router + CORS, arma todas las rutas
-│   │   ├── meters/          # GET /meters, /meters/:id, /meters/:id/readings
+│   │   ├── meters/          # GET /meters, /meters/:id, /meters/:id/readings (paginado), /meters/daily
 │   │   └── seed/            # tenant + usuario demo + carga de readings/events.csv
 │   ├── sqlc.yaml
 │   ├── Dockerfile
@@ -317,9 +350,9 @@ Investigación sin modelar una tabla nueva por cada tipo de evidencia.
 │   ├── src/
 │   │   ├── api/              # axios + interceptors, RTK Query (apiSlice.ts)
 │   │   ├── auth/              # ProtectedRoute (guard de rutas)
-│   │   ├── components/       # LineChart, Sparkline, StatTile, Badge
-│   │   ├── layout/            # shell con nav + logout
-│   │   ├── pages/              # Login, Dashboard, Medidores, Detalle (Anomalías: placeholder)
+│   │   ├── components/       # TimeSeriesChart (Recharts), StatTile, Badge, Skeleton, ErrorBoundary
+│   │   ├── layout/            # shell con sidebar (desktop) / nav inferior (mobile) + logout
+│   │   ├── pages/              # Login, Dashboard, Medidores, Detalle, Anomalías, Investigación
 │   │   └── store/              # Redux: authSlice + store.ts
 │   └── Dockerfile
 ├── data/
