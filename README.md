@@ -6,7 +6,7 @@ Prueba técnica: Backend + Frontend + Data + IA.
 
 ## Cómo correr esto
 
-Requisito: Docker corriendo. Nada más.
+Requisito único: tener Docker en ejecución.
 
 ```bash
 git clone <este repo>
@@ -14,15 +14,16 @@ cd bia-test
 ./run.sh local
 ```
 
-Levanta backend (`:8080`), frontend (`:5173`) y Postgres, con el dataset
-ya cargado. Cuando termine:
+Este comando levanta el backend (`:8080`), el frontend (`:5173`) y
+Postgres, con el dataset ya cargado. Una vez finalizado:
 
-1. Abrí **http://localhost:5173**
-2. Entrá con `admin@energy-platform.local` / `demo1234`
-3. Dashboard → Medidores → click en **M-109** → Anomalías IA → "Run AI
-   Analysis" → Investigación de M-109
+1. Abrir **http://localhost:5173**
+2. Iniciar sesión con `admin@energy-platform.local` / `demo1234`
+3. Recorrer Dashboard → Medidores → seleccionar **M-109** → Anomalías IA
+   → "Run AI Analysis" → Investigación de M-109
 
-Variables de entorno y más detalle en [Detalle de cómo correrlo](#detalle-de-cómo-correrlo).
+El detalle de variables de entorno está en la sección
+[Detalle de cómo correrlo](#detalle-de-cómo-correrlo).
 
 ## Estado actual
 
@@ -67,78 +68,89 @@ todo contra datos reales.
 - `docker-compose.local.yaml` + `run.sh` — levanta Postgres, backend y
   frontend en modo dev.
 
-Los 4 casos que evalúa la prueba (M-104/106/109/112) están verificados
-contra el resultado real de `POST /ai/analyze`, no solo revisados a ojo.
+Los 4 casos que evalúa la prueba (M-104/106/109/112) fueron verificados
+contra el resultado real de `POST /ai/analyze`, no solo inspeccionados
+manualmente.
 
 ## Cómo se pensó esto
 
-El objetivo no es un CRUD de medidores, es mostrar el ciclo completo: datos
-→ análisis → anomalía → explicación → priorización → acción.
+El objetivo no es un CRUD de medidores, sino demostrar el ciclo completo:
+datos → análisis → anomalía → explicación → priorización → acción.
 
-**Backend en Go + Postgres**, sin ORM. Uso `sqlc`: escribo el SQL a mano y
-genera funciones Go tipadas — si una migración rompe una query, me entero
-al generar el código, no en producción. `evidence` en `ANOMALIES` es JSONB
-porque su forma cambia según el tipo de anomalía, sin modelar una tabla
-nueva por cada caso.
+**Backend en Go y Postgres, sin ORM.** Se utiliza `sqlc`: las consultas SQL
+se escriben a mano y se genera código Go tipado a partir de ellas — si una
+migración invalida una consulta, el error aparece al generar el código, no
+en producción. La columna `evidence` de `ANOMALIES` es de tipo JSONB
+porque su estructura varía según el tipo de anomalía, evitando modelar una
+tabla nueva por cada caso.
 
-**La IA está separada en dos capas que no se pisan.** Detección y
-clasificación (¿hay anomalía?, de qué tipo, con qué confianza) es
-puramente estadística — baseline por hora sobre los primeros 7 días,
-z-score, chequeo de voltaje/PF — porque necesito que sea reproducible: los
-casos que evalúa la prueba no pueden depender de que un LLM responda
-distinto en cada corrida. El LLM (OpenAI) solo entra para redactar
-`reason`/`recommended_action` a partir de la evidencia ya calculada — nunca
-diagnostica. Si no hay `OPENAI_API_KEY` o falla la llamada, cae a un
-template, así el demo no se rompe por red o costo (probado con un servidor
-HTTP falso en los tests; hay un test aparte con build tag `live` que sí
-pega contra OpenAI real).
+**La inteligencia artificial está separada en dos capas independientes.**
+La detección y clasificación (si hay una anomalía, de qué tipo y con qué
+confianza) es puramente estadística — baseline horario sobre los primeros
+7 días, z-score, verificación de voltaje y factor de potencia — para
+garantizar resultados reproducibles: los casos que evalúa la prueba no
+pueden depender de que un LLM responda de forma distinta en cada corrida.
+El LLM (OpenAI) interviene únicamente para redactar `reason` y
+`recommended_action` a partir de la evidencia ya calculada, sin participar
+en el diagnóstico. Si no hay `OPENAI_API_KEY` configurada o la llamada
+falla, el sistema recurre a un template, de modo que la demo no se vea
+afectada por problemas de red o de costo (comportamiento validado con un
+servidor HTTP simulado en los tests; existe además un test independiente
+con build tag `live` que sí llama a la API real de OpenAI).
 
-Separar "falla de sensor" de "cambio real de consumo" no salió a la
-primera — un z-score de voltaje/PF también disparaba para M-109, cuyo
-power factor cae de verdad cuando sube el consumo. Lo que separa los dos
-casos es la **continuidad**: M-109 es un bloque de 58 horas seguidas sin
-huecos (cambio de estado sostenido); M-112 son 16 lecturas sueltas cada 3
-horas exactas, alternando de signo (ruido de sensor). El motor agrupa
-lecturas fuera de rango en bloques contiguos y decide por ahí, no por
-magnitud sola — queda como test contra el CSV real en
+Distinguir una falla de sensor de un cambio real de consumo no fue trivial
+en un primer intento: un z-score de voltaje/factor de potencia también se
+disparaba para M-109, cuyo factor de potencia cae genuinamente cuando sube
+el consumo. El criterio que sí separa ambos casos es la **continuidad**:
+M-109 presenta un bloque de 58 horas consecutivas sin interrupciones (un
+cambio de estado sostenido), mientras que M-112 presenta 16 lecturas
+aisladas cada 3 horas exactas, alternando de signo (ruido de sensor). El
+motor agrupa las lecturas fuera de rango en bloques contiguos y clasifica
+en función de esa continuidad, no solo de la magnitud — este
+comportamiento está cubierto por tests contra el CSV real en
 `internal/analytics/detector_test.go`.
 
-`POST /ai/analyze` corre síncrono — el motor estadístico es instantáneo
-para 12 medidores, y las explicaciones por LLM salen en paralelo
-(goroutines) en vez de una por una, así que la corrida completa tarda ~3s.
-`GET /anomalies` solo devuelve las del último análisis corrido, no
-acumula entre clicks.
+`POST /ai/analyze` se ejecuta de forma síncrona: el motor estadístico es
+instantáneo para 12 medidores, y las explicaciones vía LLM se generan en
+paralelo (goroutines) en lugar de secuencialmente, de modo que la corrida
+completa toma aproximadamente 3 segundos. `GET /anomalies` devuelve
+únicamente las anomalías del último análisis ejecutado, sin acumular
+resultados entre corridas.
 
-**Frontend en React + Vite + Tailwind**, Redux Toolkit + RTK Query sobre
-Axios. Nombre e identidad propia ("Voltra", paleta `brand`/`ink`, Geist
-Sans) en vez de quedar genérico — el login se siente como el de un SaaS
-real, sin mencionar que esto es una prueba técnica.
+**Frontend en React, Vite y Tailwind**, con Redux Toolkit y RTK Query
+sobre Axios. Se definió una identidad de marca propia ("Voltra", paleta
+`brand`/`ink`, tipografía Geist Sans) en lugar de dejar la interfaz
+genérica, buscando que el login se perciba como el de un producto SaaS
+real y no como una pantalla de evaluación.
 
-**Seguridad y escala, ya con el producto funcionando:** el JWT vive en una
-cookie `httpOnly` (no en `localStorage`, no lo puede leer un script
-inyectado) y el servidor no arranca si falta `JWT_SECRET`, en vez de caer
-a un default silencioso. Con 12 medidores y 4.032 lecturas nada se nota,
-pero `GET /meters` hacía una query de lecturas por medidor (N+1) y el
-timeline de "todos los medidores" pedía las lecturas crudas de cada uno
-por separado — los cambié por una sola query agregada en Postgres, y
-`/meters/:id/readings` quedó paginado por cursor para no devolver una
-respuesta sin límite si la frecuencia de datos aumenta.
+**Seguridad y escalabilidad, incorporadas sobre el producto ya
+funcional.** El JWT se almacena en una cookie `httpOnly` (no en
+`localStorage`, por lo que no puede ser leído por un script inyectado) y
+el servidor no inicia si falta la variable `JWT_SECRET`, en lugar de
+recurrir a un valor por defecto silencioso. Con 12 medidores y 4.032
+lecturas estas decisiones no se notan en el uso diario, pero `GET /meters`
+ejecutaba una consulta de lecturas por medidor (problema N+1) y el
+timeline de "todos los medidores" solicitaba las lecturas crudas de cada
+uno por separado; ambos casos se reemplazaron por una única consulta
+agregada en Postgres, y `/meters/:id/readings` quedó paginado por cursor
+para evitar respuestas sin límite si la frecuencia de datos aumenta.
 
-Una que nadie pidió: le metí `tenant_id` a todas las tablas desde el
-modelo de datos, aunque hoy opera con un único tenant seedeado. Separar
-por tenant después de tener datos mezclados es una migración fea, y
-hacerlo desde el día uno no cuesta nada.
+Una decisión no solicitada por el enunciado: se incorporó `tenant_id` en
+todas las tablas desde el modelo de datos, aunque el producto opera hoy
+con un único tenant precargado. Separar por tenant una vez que los datos
+ya están mezclados implica una migración costosa, mientras que incluirlo
+desde el diseño inicial no tiene costo adicional.
 
-**Lo que queda afuera, a propósito:**
+**Alcance excluido deliberadamente:**
 
-- UI multi-tenant (alta/cambio de tenant) — el esquema lo soporta, el
-  producto no lo expone.
-- Tiempo real — el análisis se dispara a mano con "Run AI Analysis", no hay
-  websockets ni polling agresivo.
-- Modelos entrenados — la detección es estadística explicable, no una caja
-  negra.
-- Tests end-to-end o CI/CD — la cobertura se concentra en el motor de
-  detección/clasificación, que es lo que evalúa la prueba.
+- UI multi-tenant (alta o cambio de tenant): el esquema lo soporta, pero
+  el producto no lo expone actualmente.
+- Procesamiento en tiempo real: el análisis se ejecuta manualmente
+  mediante "Run AI Analysis"; no hay websockets ni polling continuo.
+- Modelos entrenados: la detección es estadística y explicable, no una
+  caja negra.
+- Tests end-to-end o CI/CD: la cobertura se concentra en el motor de
+  detección y clasificación, que es lo que evalúa la prueba.
 
 ## Modelo de datos
 
@@ -285,11 +297,11 @@ Investigación sin modelar una tabla nueva por cada tipo de evidencia.
 ./run.sh local
 ```
 
-Esto levanta:
+Este comando levanta:
 
 - **backend** — Go, `go run ./cmd/server`, puerto `8080` (`GET /health`)
 - **frontend** — Vite dev server, puerto `5173`
-- **db** — Postgres 16, puerto host `5433` (usuario/clave/db: `app`/`app`/`energy`)
+- **db** — Postgres 16, puerto host `5433` (usuario/clave/base: `app`/`app`/`energy`)
 
 ## Variables de entorno (backend)
 
@@ -298,15 +310,16 @@ Esto levanta:
 | `PORT`          | `8080`                                                       |
 | `DATABASE_DSN`  | `postgres://app:app@db:5432/energy?sslmode=disable` (en Docker) |
 | `DATA_DIR`      | `../data` — carpeta con `readings.csv`/`events.csv` para el seed |
-| `JWT_SECRET`    | **sin default** — el servidor no arranca sin esta variable seteada |
-| `OPENAI_API_KEY` | (sin default) — si no está seteada, las explicaciones de anomalías caen a template en vez de LLM |
+| `JWT_SECRET`    | sin default — el servidor no inicia si esta variable no está definida |
+| `OPENAI_API_KEY` | sin default — si no está definida, las explicaciones de anomalías se generan por template en lugar de LLM |
 
-**Usuario demo seedeado:** `admin@energy-platform.local` / `demo1234`
-(un solo tenant, un solo usuario — ver [Alcance de diseño](#cómo-se-pensó-esto)).
+**Usuario de demostración precargado:** `admin@energy-platform.local` /
+`demo1234` (un único tenant, un único usuario — ver
+[Cómo se pensó esto](#cómo-se-pensó-esto)).
 
-**Probar el explainer de OpenAI contra la API real** (no corre en
-`go test ./...` normal, hay que pedirlo explícitamente para no gastar
-créditos en cada corrida):
+**Para probar el explainer de OpenAI contra la API real** (no se ejecuta
+como parte de `go test ./...`; debe solicitarse explícitamente para
+evitar consumir créditos en cada corrida):
 
 ```bash
 cd backend
