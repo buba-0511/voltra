@@ -162,3 +162,40 @@ func (q *Queries) ListAnomaliesForLatestRun(ctx context.Context, tenantID int32)
 	}
 	return items, nil
 }
+
+const updateAnomalyStatus = `-- name: UpdateAnomalyStatus :one
+UPDATE anomalies SET status = $3
+WHERE tenant_id = $1 AND id = $2
+RETURNING id, tenant_id, analysis_run_id, meter_id, detected_at, window_start, window_end, type, severity, confidence, reason, recommended_action, status, baseline_kwh, actual_kwh, variation_pct, evidence
+`
+
+type UpdateAnomalyStatusParams struct {
+	TenantID int32  `json:"tenant_id"`
+	ID       int64  `json:"id"`
+	Status   string `json:"status"`
+}
+
+func (q *Queries) UpdateAnomalyStatus(ctx context.Context, arg UpdateAnomalyStatusParams) (Anomaly, error) {
+	row := q.db.QueryRow(ctx, updateAnomalyStatus, arg.TenantID, arg.ID, arg.Status)
+	var i Anomaly
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.AnalysisRunID,
+		&i.MeterID,
+		&i.DetectedAt,
+		&i.WindowStart,
+		&i.WindowEnd,
+		&i.Type,
+		&i.Severity,
+		&i.Confidence,
+		&i.Reason,
+		&i.RecommendedAction,
+		&i.Status,
+		&i.BaselineKwh,
+		&i.ActualKwh,
+		&i.VariationPct,
+		&i.Evidence,
+	)
+	return i, err
+}

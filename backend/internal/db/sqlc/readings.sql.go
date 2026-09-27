@@ -11,6 +11,95 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const dailyConsumptionAllMeters = `-- name: DailyConsumptionAllMeters :many
+SELECT
+    meter_id,
+    to_char(timestamp AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
+    COALESCE(SUM(consumption_kwh), 0)::float8 AS total_kwh
+FROM readings
+WHERE tenant_id = $1
+GROUP BY meter_id, day
+ORDER BY meter_id, day
+`
+
+type DailyConsumptionAllMetersRow struct {
+	MeterID  string  `json:"meter_id"`
+	Day      string  `json:"day"`
+	TotalKwh float64 `json:"total_kwh"`
+}
+
+func (q *Queries) DailyConsumptionAllMeters(ctx context.Context, tenantID int32) ([]DailyConsumptionAllMetersRow, error) {
+	rows, err := q.db.Query(ctx, dailyConsumptionAllMeters, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DailyConsumptionAllMetersRow
+	for rows.Next() {
+		var i DailyConsumptionAllMetersRow
+		if err := rows.Scan(&i.MeterID, &i.Day, &i.TotalKwh); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const dailyConsumptionByMeter = `-- name: DailyConsumptionByMeter :many
+SELECT
+    to_char(timestamp AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
+    COALESCE(SUM(consumption_kwh), 0)::float8 AS total_kwh,
+    COALESCE(AVG(voltage_v), 0)::float8 AS avg_voltage_v,
+    COALESCE(AVG(power_factor), 0)::float8 AS avg_power_factor
+FROM readings
+WHERE tenant_id = $1 AND meter_id = $2
+GROUP BY day
+ORDER BY day
+`
+
+type DailyConsumptionByMeterParams struct {
+	TenantID int32  `json:"tenant_id"`
+	MeterID  string `json:"meter_id"`
+}
+
+type DailyConsumptionByMeterRow struct {
+	Day            string  `json:"day"`
+	TotalKwh       float64 `json:"total_kwh"`
+	AvgVoltageV    float64 `json:"avg_voltage_v"`
+	AvgPowerFactor float64 `json:"avg_power_factor"`
+}
+
+// Aggregates in Postgres instead of pulling every raw reading to the app
+// to sum client-side - the response stays bounded by day count, not by
+// reading count, no matter how fine-grained the underlying data gets.
+func (q *Queries) DailyConsumptionByMeter(ctx context.Context, arg DailyConsumptionByMeterParams) ([]DailyConsumptionByMeterRow, error) {
+	rows, err := q.db.Query(ctx, dailyConsumptionByMeter, arg.TenantID, arg.MeterID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DailyConsumptionByMeterRow
+	for rows.Next() {
+		var i DailyConsumptionByMeterRow
+		if err := rows.Scan(
+			&i.Day,
+			&i.TotalKwh,
+			&i.AvgVoltageV,
+			&i.AvgPowerFactor,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const insertReading = `-- name: InsertReading :exec
 INSERT INTO readings (tenant_id, meter_id, timestamp, consumption_kwh, voltage_v, current_a, power_factor, status)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -55,6 +144,98 @@ type ListReadingsByMeterParams struct {
 
 func (q *Queries) ListReadingsByMeter(ctx context.Context, arg ListReadingsByMeterParams) ([]Reading, error) {
 	rows, err := q.db.Query(ctx, listReadingsByMeter, arg.TenantID, arg.MeterID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Reading
+	for rows.Next() {
+		var i Reading
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.MeterID,
+			&i.Timestamp,
+			&i.ConsumptionKwh,
+			&i.VoltageV,
+			&i.CurrentA,
+			&i.PowerFactor,
+			&i.Status,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listReadingsByMeterPage = `-- name: ListReadingsByMeterPage :many
+SELECT id, tenant_id, meter_id, timestamp, consumption_kwh, voltage_v, current_a, power_factor, status FROM readings
+WHERE tenant_id = $1 AND meter_id = $2
+  AND ($4::timestamptz IS NULL OR timestamp > $4)
+ORDER BY timestamp
+LIMIT $3
+`
+
+type ListReadingsByMeterPageParams struct {
+	TenantID int32              `json:"tenant_id"`
+	MeterID  string             `json:"meter_id"`
+	Limit    int32              `json:"limit"`
+	Cursor   pgtype.Timestamptz `json:"cursor"`
+}
+
+// Cursor (keyset) pagination on timestamp: a meter's readings have no
+// upper bound on how many rows they can grow to, so this endpoint must
+// never be able to return an unbounded response.
+func (q *Queries) ListReadingsByMeterPage(ctx context.Context, arg ListReadingsByMeterPageParams) ([]Reading, error) {
+	rows, err := q.db.Query(ctx, listReadingsByMeterPage,
+		arg.TenantID,
+		arg.MeterID,
+		arg.Limit,
+		arg.Cursor,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Reading
+	for rows.Next() {
+		var i Reading
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.MeterID,
+			&i.Timestamp,
+			&i.ConsumptionKwh,
+			&i.VoltageV,
+			&i.CurrentA,
+			&i.PowerFactor,
+			&i.Status,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listReadingsByTenant = `-- name: ListReadingsByTenant :many
+SELECT id, tenant_id, meter_id, timestamp, consumption_kwh, voltage_v, current_a, power_factor, status FROM readings
+WHERE tenant_id = $1
+ORDER BY meter_id, timestamp
+`
+
+// Used to compute every meter's baseline in one round trip instead of one
+// query per meter (see meters.Handler.List) - still O(readings) in Go,
+// but O(1) in database round trips regardless of meter count.
+func (q *Queries) ListReadingsByTenant(ctx context.Context, tenantID int32) ([]Reading, error) {
+	rows, err := q.db.Query(ctx, listReadingsByTenant, tenantID)
 	if err != nil {
 		return nil, err
 	}
