@@ -1,3 +1,5 @@
+import { badgeLabel } from '../utils/badgeLabel'
+
 const styles: Record<string, string> = {
   HIGH: 'bg-red-50 text-red-600 border-red-100',
   MEDIUM: 'bg-amber-50 text-amber-700 border-amber-100',
@@ -9,17 +11,14 @@ const styles: Record<string, string> = {
   EXPLAINABLE_ANOMALY: 'bg-amber-50 text-amber-700 border-amber-100',
   FALSE_POSITIVE: 'bg-slate-100 text-slate-600 border-slate-200',
   DATA_QUALITY: 'bg-violet-50 text-violet-600 border-violet-100',
-}
-
-const typeLabels: Record<string, string> = {
-  REAL_ANOMALY: 'Anomalía real',
-  EXPLAINABLE_ANOMALY: 'Explicable',
-  FALSE_POSITIVE: 'Falso positivo',
-  DATA_QUALITY: 'Calidad de datos',
+  OPEN: 'bg-amber-50 text-amber-700 border-amber-100',
+  IN_REVIEW: 'bg-brand-50 text-brand-700 border-brand-100',
+  RESOLVED: 'bg-emerald-50 text-emerald-600 border-emerald-100',
+  DISMISSED: 'bg-slate-100 text-slate-500 border-slate-200',
 }
 
 export function Badge({ children }: { children: string }) {
-  const label = typeLabels[children] ?? children
+  const label = badgeLabel(children)
   const style = styles[children.toUpperCase()] ?? 'bg-slate-50 text-slate-600 border-slate-200'
   return (
     <span
