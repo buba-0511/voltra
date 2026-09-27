@@ -10,12 +10,13 @@ import (
 )
 
 type Handler struct {
-	Queries   *sqlcgen.Queries
-	JWTSecret string
+	Queries      *sqlcgen.Queries
+	JWTSecret    string
+	CookieSecure bool
 }
 
-func NewHandler(q *sqlcgen.Queries, jwtSecret string) *Handler {
-	return &Handler{Queries: q, JWTSecret: jwtSecret}
+func NewHandler(q *sqlcgen.Queries, jwtSecret string, cookieSecure bool) *Handler {
+	return &Handler{Queries: q, JWTSecret: jwtSecret, CookieSecure: cookieSecure}
 }
 
 type loginRequest struct {
@@ -24,8 +25,7 @@ type loginRequest struct {
 }
 
 type loginResponse struct {
-	Token string     `json:"token"`
-	User  userPublic `json:"user"`
+	User userPublic `json:"user"`
 }
 
 type userPublic struct {
@@ -43,7 +43,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 
 	tenant, err := h.Queries.GetTenantBySlug(r.Context(), config.DefaultTenantSlug)
 	if err != nil {
-		httpx.WriteError(w, http.StatusInternalServerError, "tenant lookup failed")
+		httpx.WriteServerError(w, err, "tenant lookup failed")
 		return
 	}
 
@@ -58,14 +58,24 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 
 	token, err := GenerateToken(h.JWTSecret, user.ID, user.TenantID, user.Email)
 	if err != nil {
-		httpx.WriteError(w, http.StatusInternalServerError, "failed to issue token")
+		httpx.WriteServerError(w, err, "failed to issue token")
 		return
 	}
 
+	setAuthCookie(w, token, h.CookieSecure)
 	httpx.WriteJSON(w, http.StatusOK, loginResponse{
-		Token: token,
-		User:  userPublic{ID: user.ID, Email: user.Email, Name: user.Name},
+		User: userPublic{ID: user.ID, Email: user.Email, Name: user.Name},
 	})
+}
+
+// Logout clears the auth cookie. The JWT itself stays valid until it
+// expires (this is a stateless token, not a server-side session), but
+// the browser no longer holds it, so the next request has nothing to
+// authenticate with - same practical effect for this single-user-per-
+// browser app.
+func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
+	clearAuthCookie(w, h.CookieSecure)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {

@@ -13,6 +13,11 @@ services:
       DATABASE_DSN: postgres://app:app@db:5432/energy?sslmode=disable
       DATA_DIR: /data
       ALLOWED_ORIGIN: http://localhost:5173
+      # Local dev only - production sets its own via the real secrets
+      # manager. The server refuses to start without one (see
+      # internal/config), so it can never silently run with a
+      # source-committed default.
+      JWT_SECRET: local-dev-only-secret-do-not-use-in-production
     volumes:
       - ./backend:/app
       - ./data:/data
