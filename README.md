@@ -23,15 +23,21 @@ funcional de punta a punta**; lo que falta es el frontend:
   analizados, 4 anomalías detectadas, 2 de alta prioridad — coincide
   exacto con el ejemplo del enunciado (sección 13). Las 4 explicaciones
   las escribió un LLM real (OpenAI), citando los números correctos.
-- `frontend/` — Vite + React + TypeScript + Tailwind CSS v4, con la página
-  por defecto limpiada. Sin rutas ni pantallas del producto todavía.
+- `frontend/` — Vite + React + TypeScript + Tailwind CSS v4. Redux
+  Toolkit + RTK Query para estado/data-fetching, Axios por debajo (con
+  interceptors: token automático en cada request, logout global en
+  cualquier 401). Login funcional contra el backend real, rutas
+  protegidas (`react-router-dom`), shell con nav. Marca propia ("Voltra"),
+  paleta (`brand`/`ink`) y tipografía (Geist Sans) definidas como tokens
+  de Tailwind v4. Las pantallas de Dashboard/Medidores/Anomalías todavía
+  son placeholders — el contenido real es la próxima pieza.
 - `data/` — `readings.csv` (4.032 lecturas, 12 medidores, 14 días) y
   `events.csv` (eventos operativos conocidos) provistos por la prueba.
 - `docker-compose.local.yaml` + `run.sh` — levanta Postgres, backend y
   frontend en modo dev.
 
-Pendiente: las pantallas de Dashboard → Medidores → Detalle →
-Anomalías IA → Investigación → Acción, conectadas a esta API.
+Pendiente: el contenido real de Dashboard → Medidores → Detalle →
+Anomalías IA → Investigación → Acción (hoy son placeholders).
 
 ## Cómo se pensó esto
 
@@ -120,7 +126,26 @@ en el punto de conversión, no en cada lugar donde se despliegan.
 
 Frontend: React + Vite + TypeScript + Tailwind, buscando que se sienta como
 un producto real y no como pantallas de prueba, sin perder velocidad de
-desarrollo en el camino.
+desarrollo en el camino. El manejo de estado/data-fetching es Redux
+Toolkit + RTK Query, con Axios por debajo en vez de `fetch` — así los
+interceptors quedan en un solo lugar: uno de request que le pega el token
+a cada llamada, y uno de response que ante cualquier 401 limpia la sesión
+globalmente, sin que cada pantalla tenga que acordarse de manejarlo. Para
+evitar un import circular (el store necesita a Axios vía RTK Query, y si
+Axios necesitara al store para hacer logout en el 401 se cierra el
+círculo), el interceptor no importa el store directo — avisa a través de
+un pub/sub chico (`api/authEvents.ts`), y es el store el que se suscribe
+una vez, al crearse.
+
+Le puse nombre e identidad propia al producto — "Voltra" — en vez de
+dejarlo como "AI Energy Management" genérico en toda la UI. La paleta
+(`brand` teal + `ink` navy) y la tipografía (Geist Sans, self-hosted para
+no depender de una CDN externa durante la demo) están como tokens de
+Tailwind v4 en `index.css`, no como hex sueltos copiados en cada
+componente. El login tiene un panel de marca a la izquierda con el
+propósito del producto en criollo, sin mencionar que esto es una prueba
+técnica — la idea es que se sienta como el login de un SaaS real, no como
+una pantalla de demo.
 
 Para el login usé JWT con un solo usuario demo seedeado. Cubre el flujo
 Login → Dashboard sin construir un sistema de registro/roles que nadie va a
@@ -270,6 +295,12 @@ Investigación sin modelar una tabla nueva por cada tipo de evidencia.
 │   ├── Dockerfile
 │   └── go.mod
 ├── frontend/                 # Vite + React + TS + Tailwind
+│   ├── src/
+│   │   ├── api/              # axios + interceptors, RTK Query (apiSlice.ts)
+│   │   ├── auth/              # ProtectedRoute (guard de rutas)
+│   │   ├── layout/            # shell con nav + logout
+│   │   ├── pages/              # Login + Dashboard/Medidores/Anomalías (placeholders)
+│   │   └── store/              # Redux: authSlice + store.ts
 │   └── Dockerfile
 ├── data/
 │   ├── readings.csv

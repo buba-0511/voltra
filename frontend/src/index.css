@@ -1,7 +1,47 @@
 @import 'tailwindcss';
+@import '@fontsource/geist-sans/400.css';
+@import '@fontsource/geist-sans/500.css';
+@import '@fontsource/geist-sans/600.css';
+@import '@fontsource/geist-sans/700.css';
+
+@theme {
+  --font-sans: 'Geist Sans', ui-sans-serif, system-ui, sans-serif;
+
+  /* Brand teal - primary accent, CTAs, active states, chart highlights */
+  --color-brand-50: #e7faf7;
+  --color-brand-100: #d4ece8;
+  --color-brand-200: #a8e0d8;
+  --color-brand-300: #6cd3c0;
+  --color-brand-400: #3ac7ae;
+  --color-brand-500: #18c8b3;
+  --color-brand-600: #12a595;
+  --color-brand-700: #0d8577;
+  --color-brand-800: #0a6a5f;
+  --color-brand-900: #085449;
+
+  /* Ink navy - dark surfaces (sidebar, hero cards) and body text.
+     183 is the "foreground" color used for regular text - not pure
+     black, everything reads slightly cooler/darker-teal. */
+  --color-ink-50: #edf2f2;
+  --color-ink-100: #e4ecec;
+  --color-ink-200: #b9cece;
+  --color-ink-300: #9dc5c1;
+  --color-ink-400: #7d9b9c;
+  --color-ink-500: #214c50;
+  --color-ink-600: #183b40;
+  --color-ink-700: #112f36;
+  --color-ink-800: #102f36;
+  --color-ink-900: #092d34;
+
+  /* Page background / borders - a hair cooler than plain white/gray so
+     it reads as part of the same palette instead of default-Tailwind
+     gray. */
+  --color-surface: #f5f8f8;
+  --color-surface-border: #dfe9e8;
+}
 
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
 }
 
 body {
