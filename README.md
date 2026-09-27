@@ -11,11 +11,15 @@ Requisito único: tener Docker en ejecución.
 ```bash
 git clone <este repo>
 cd bia-test
+cp .env.example .env   # opcional, ver nota abajo
 ./run.sh local
 ```
 
 Este comando levanta el backend (`:8080`), el frontend (`:5173`) y
-Postgres, con el dataset ya cargado. Una vez finalizado:
+Postgres, con el dataset ya cargado. El paso de `.env` es opcional: sin
+`OPENAI_API_KEY`, las explicaciones de anomalías se generan igual, pero
+con un template en lugar de un LLM real (más detalle en
+[Cómo se pensó esto](#cómo-se-pensó-esto)). Una vez finalizado:
 
 1. Abrir **http://localhost:5173**
 2. Iniciar sesión con `admin@energy-platform.local` / `demo1234`
@@ -312,6 +316,10 @@ Este comando levanta:
 | `DATA_DIR`      | `../data` — carpeta con `readings.csv`/`events.csv` para el seed |
 | `JWT_SECRET`    | sin default — el servidor no inicia si esta variable no está definida |
 | `OPENAI_API_KEY` | sin default — si no está definida, las explicaciones de anomalías se generan por template en lugar de LLM |
+
+Para levantar todo con `./run.sh local` (Docker Compose), `OPENAI_API_KEY`
+se toma de un `.env` en la raíz del repo (ver `.env.example`); ese archivo
+está en `.gitignore` y no llega al control de versiones.
 
 **Usuario de demostración precargado:** `admin@energy-platform.local` /
 `demo1234` (un único tenant, un único usuario — ver

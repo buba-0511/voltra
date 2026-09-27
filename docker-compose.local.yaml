@@ -18,6 +18,10 @@ services:
       # internal/config), so it can never silently run with a
       # source-committed default.
       JWT_SECRET: local-dev-only-secret-do-not-use-in-production
+      # Optional - copy .env.example to .env and set a real key to get
+      # LLM-written explanations. Without it, every anomaly still gets a
+      # real explanation, just from the deterministic template fallback.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     volumes:
       - ./backend:/app
       - ./data:/data
