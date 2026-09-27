@@ -316,11 +316,15 @@ Este comando levanta:
 **Deploy (Railway):** tres servicios en el mismo proyecto — Postgres
 gestionado, `backend` y `frontend` como builds Docker independientes
 (`backend/Dockerfile.prod` y `frontend/Dockerfile.prod`, cada uno
-autocontenido en su propia carpeta), conectados al repo de GitHub con
-auto-deploy en cada push a `develop`. El backend corre migraciones y seed
-al arrancar, igual que en local. `ALLOWED_ORIGIN` y `COOKIE_SECURE=true`
-apuntan al dominio del frontend para que la cookie de sesión funcione
-entre dominios distintos (`SameSite=None; Secure`).
+autocontenido en su propia carpeta), conectados al repo de GitHub. El
+deploy está gateado por CI: Railway tiene el flag `checkSuites` activado
+en ambos servicios, así que solo despliega un push a `develop` si los
+checks de `.github/workflows/ci.yml` pasan primero — CI y CD conectados,
+no un auto-deploy corriendo en paralelo e ignorando si los tests fallan.
+El backend corre migraciones y seed al arrancar, igual que en local.
+`ALLOWED_ORIGIN` y `COOKIE_SECURE=true` apuntan al dominio del frontend
+para que la cookie de sesión funcione entre dominios distintos
+(`SameSite=None; Secure`).
 
 ## Variables de entorno (backend)
 
