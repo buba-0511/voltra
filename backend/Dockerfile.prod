@@ -1,10 +1,12 @@
-# Build context is the repo root (needs both backend/ and data/), not
-# backend/ alone - see railway config / deploy docs.
+# Self-contained build (root directory = backend/) so each Railway
+# service can be a plain subfolder deploy, no shared repo-root context.
+# data/ here is a copy of the repo-root data/ (see ../data) - static
+# dataset files from the challenge, not expected to change.
 FROM golang:1.26-alpine AS build
 WORKDIR /app
-COPY backend/go.mod backend/go.sum* ./
+COPY go.mod go.sum* ./
 RUN go mod download
-COPY backend/ .
+COPY . .
 RUN CGO_ENABLED=0 go build -o /server ./cmd/server
 
 FROM alpine:3.20
