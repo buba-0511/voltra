@@ -1,8 +1,31 @@
+import { Provider } from 'react-redux'
+import { Navigate, Route, BrowserRouter, Routes } from 'react-router-dom'
+import { ProtectedRoute } from './auth/ProtectedRoute'
+import { AppLayout } from './layout/AppLayout'
+import { AnomaliesPage } from './pages/AnomaliesPage'
+import { DashboardPage } from './pages/DashboardPage'
+import { LoginPage } from './pages/LoginPage'
+import { MetersPage } from './pages/MetersPage'
+import { store } from './store/store'
+
 function App() {
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <p className="p-6">AI Energy Management Platform</p>
-    </div>
+    <Provider store={store}>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route element={<ProtectedRoute />}>
+            <Route element={<AppLayout />}>
+              <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/meters" element={<MetersPage />} />
+              <Route path="/anomalies" element={<AnomaliesPage />} />
+            </Route>
+          </Route>
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </Provider>
   )
 }
 
