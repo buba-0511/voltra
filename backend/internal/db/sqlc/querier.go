@@ -14,6 +14,9 @@ type Querier interface {
 	CreateAnalysisRun(ctx context.Context, tenantID int32) (AnalysisRun, error)
 	CreateTenant(ctx context.Context, arg CreateTenantParams) (Tenant, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	// Scoped to the latest completed run, same as ListAnomaliesForLatestRun -
+	// otherwise this grows every time "Run AI Analysis" is clicked instead of
+	// reflecting the current state.
 	DashboardAnomalyCounts(ctx context.Context, tenantID int32) (DashboardAnomalyCountsRow, error)
 	DashboardLatestAnalysisRun(ctx context.Context, tenantID int32) (AnalysisRun, error)
 	DashboardMeterCount(ctx context.Context, tenantID int32) (int64, error)
